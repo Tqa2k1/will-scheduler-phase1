@@ -1,0 +1,35 @@
+{
+  "name": "whill-scheduler",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && prisma db push --accept-data-loss && tsx prisma/seed.ts && next build",
+    "start": "next start",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:generate": "prisma generate",
+    "prisma:studio": "prisma studio",
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.20.0",
+    "next": "14.2.5",
+    "next-auth": "^4.24.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "bcryptjs": "^2.4.3",
+    "zod": "^3.23.8",
+    "exceljs": "^4.4.0",
+    "pdfkit": "^0.15.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "prisma": "^5.20.0",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4",
+    "@types/pdfkit": "^0.13.4"
+  }
+}

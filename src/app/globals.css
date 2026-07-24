@@ -1,0 +1,56 @@
+:root {
+  /* Bảng màu: xanh navy điều hành (điều phối/vận hành) + cam WHILL làm điểm nhấn duy nhất */
+  --color-bg: #0f172a;
+  --color-surface: #16213a;
+  --color-surface-2: #1c2b4a;
+  --color-border: #2a3a5c;
+  --color-text: #e7ecf5;
+  --color-text-muted: #93a1bb;
+  --color-accent: #ff8a3d;
+  --color-ok: #35c48b;
+  --color-warn: #ff8a3d;
+  --color-danger: #ff5c5c;
+  --font-display: "Zen Kaku Gothic New", "Hiragino Sans", system-ui, sans-serif;
+  --font-body: "Noto Sans JP", "Hiragino Sans", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
+a { color: inherit; }
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 24px;
+}
+
+.btn {
+  background: var(--color-accent);
+  color: #12141c;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn:hover { opacity: 0.9; }
+
+.input {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: var(--color-text);
+  width: 100%;
+}
+
+.label { color: var(--color-text-muted); font-size: 13px; margin-bottom: 4px; display: block; }

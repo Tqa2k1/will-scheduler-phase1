@@ -1,0 +1,243 @@
+// ============================================================
+// WHILL Scheduling Engine — Prisma schema (Phase 0)
+// Tương ứng thiết kế Bước 4 (Database Design) đã xác nhận
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Tài khoản đăng nhập (Admin / INC) ----------
+enum UserRole {
+  ADMIN
+  INC
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         UserRole @default(INC)
+  employeeId   String?  @unique
+  employee     Employee? @relation(fields: [employeeId], references: [id])
+  createdAt    DateTime @default(now())
+}
+
+// ---------- Nhân viên ----------
+enum EmployeeRole {
+  INC
+  STAFF
+  OJT
+}
+
+enum CommuteType {
+  TAXI_ONE_WAY
+  OWN_CAR
+  OTHER
+}
+
+model Employee {
+  id           String       @id @default(cuid())
+  fullName     String
+  role         EmployeeRole @default(STAFF)
+  commuteType  CommuteType?
+  isActive     Boolean      @default(true)
+  note         String?
+  user         User?
+  monthRoster        MonthRoster[]
+  dailyAssignments   DailyAssignment[]
+  breaks             Break[]
+  personalConstraints PersonalConstraint[]
+  incidentFlags      IncidentFlag[]
+  rotationPatterns   EmployeeRotationPattern[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ---------- Loại ca ----------
+model ShiftType {
+  id               String   @id @default(cuid())
+  code             String   @unique // 明番/早番/中番/遅番/超早/超遅/INC早/INC遅
+  name             String
+  defaultStartTime String   // "08:00"
+  defaultEndTime   String   // "17:00"
+  spansMidnight    Boolean  @default(false)
+  monthRoster      MonthRoster[]
+}
+
+// ---------- Master Roster (tầng tháng) ----------
+enum RosterStatus {
+  WORK
+  PAID_LEAVE   // 有休
+  ADJUST_LEAVE // 調整休
+}
+
+model MonthRoster {
+  id          String       @id @default(cuid())
+  employeeId  String
+  employee    Employee     @relation(fields: [employeeId], references: [id])
+  workDate    DateTime     @db.Date
+  shiftTypeId String?
+  shiftType   ShiftType?   @relation(fields: [shiftTypeId], references: [id])
+  status      RosterStatus @default(WORK)
+  createdBy   String?
+  updatedBy   String?
+  updatedAt   DateTime     @updatedAt
+  createdAt   DateTime     @default(now())
+
+  @@unique([employeeId, workDate])
+  @@index([workDate])
+}
+
+// ---------- Vị trí công việc (A cart / B cart / 全 / BF...) ----------
+enum PositionCategory {
+  CART
+  SPECIAL // BF, 休憩, 移動, WHILL準備, WHILL片付け, MTG
+}
+
+model CartPosition {
+  id       String           @id @default(cuid())
+  code     String           @unique // A, B, 全, BF, BREAK, MOVE, WHILL_PREP, WHILL_CLEANUP, MTG
+  name     String
+  category PositionCategory
+
+  operatingHours  CartOperatingHours[]
+  demandTemplates DemandTemplate[]
+  dailyAssignments DailyAssignment[]
+}
+
+// Cấu hình giờ hoạt động từng cart theo template ngày (thường/cuối tuần...)
+model CartOperatingHours {
+  id             String       @id @default(cuid())
+  cartPositionId String
+  cartPosition   CartPosition @relation(fields: [cartPositionId], references: [id])
+  dayTemplate    String       // "WEEKDAY" | "WEEKEND" | "HOLIDAY" ...
+  startTime      String       // "05:00"
+  endTime        String       // "02:00" (qua ngày hôm sau nếu < startTime)
+}
+
+// Nhu cầu nhân lực hợp đồng theo slot 30 phút (契約仕様工数)
+model DemandTemplate {
+  id             String       @id @default(cuid())
+  cartPositionId String
+  cartPosition   CartPosition @relation(fields: [cartPositionId], references: [id])
+  dayTemplate    String
+  timeSlot       String       // "07:00" nghĩa là slot 07:00-07:30
+  requiredCount  Int          @default(0)
+
+  @@unique([cartPositionId, dayTemplate, timeSlot])
+}
+
+// ---------- Daily Assignment (tầng ngày/slot) — bảng lõi ----------
+model DailyAssignment {
+  id             String       @id @default(cuid())
+  employeeId     String
+  employee       Employee     @relation(fields: [employeeId], references: [id])
+  workDate       DateTime     @db.Date
+  slotStart      String       // "13:30"
+  slotEnd        String       // "14:00"
+  cartPositionId String
+  cartPosition   CartPosition @relation(fields: [cartPositionId], references: [id])
+  source         String       @default("MANUAL") // AUTO | MANUAL
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([workDate, slotStart])
+  @@index([employeeId, workDate])
+}
+
+// ---------- Giờ nghỉ giải lao ----------
+model Break {
+  id              String   @id @default(cuid())
+  employeeId      String
+  employee        Employee @relation(fields: [employeeId], references: [id])
+  workDate        DateTime @db.Date
+  breakStart      String
+  breakEnd        String
+  requiredMinutes Int
+  actualMinutes   Int?
+
+  @@index([employeeId, workDate])
+}
+
+// ---------- Rotation pattern (4勤2休...) — để trống cấu hình, chờ quyết định sau ----------
+model RotationPattern {
+  id               String   @id @default(cuid())
+  code             String   @unique
+  name             String
+  patternDefinition Json    // cấu trúc tự do, định nghĩa sau
+  isActive         Boolean  @default(false)
+
+  employees EmployeeRotationPattern[]
+}
+
+model EmployeeRotationPattern {
+  id                String          @id @default(cuid())
+  employeeId        String
+  employee          Employee        @relation(fields: [employeeId], references: [id])
+  rotationPatternId String
+  rotationPattern   RotationPattern @relation(fields: [rotationPatternId], references: [id])
+
+  @@unique([employeeId, rotationPatternId])
+}
+
+// ---------- Ràng buộc cá nhân (NG/OK) ----------
+enum ConstraintType {
+  NG
+  OK
+}
+
+model PersonalConstraint {
+  id            String         @id @default(cuid())
+  employeeId    String
+  employee      Employee       @relation(fields: [employeeId], references: [id])
+  workDate      DateTime       @db.Date
+  rangeStart    String?
+  rangeEnd      String?
+  constraintType ConstraintType
+  note          String?
+
+  @@index([employeeId, workDate])
+}
+
+// ---------- Ghi nhận phát sinh thực tế ----------
+enum IncidentType {
+  LATE            // 遅刻
+  DELAY           // 遅延 ◆
+  EARLY_LEAVE     // 早退
+  OVERTIME        // 残業
+  BF_FEE_CUT      // BF代カット ★
+  OWN_CAR_COMMUTE // 車通勤 ◎
+  ONE_WAY_TAXI    // 片道タクシー
+}
+
+model IncidentFlag {
+  id          String       @id @default(cuid())
+  employeeId  String
+  employee    Employee     @relation(fields: [employeeId], references: [id])
+  workDate    DateTime     @db.Date
+  flagType    IncidentType
+  note        String?
+  recordedBy  String?
+  recordedAt  DateTime     @default(now())
+}
+
+// ---------- Lịch sử chỉnh sửa ----------
+model RosterAuditLog {
+  id         String   @id @default(cuid())
+  tableName  String
+  recordId   String
+  action     String   // CREATE | UPDATE | DELETE
+  changedBy  String?
+  changedAt  DateTime @default(now())
+  oldValue   Json?
+  newValue   Json?
+
+  @@index([tableName, recordId])
+}

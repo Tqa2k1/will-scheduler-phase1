@@ -1,0 +1,86 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { buildOperatingDaySlots } from "@/lib/timeSlots";
+import PDFDocument from "pdfkit";
+
+export const runtime = "nodejs";
+
+// GET /api/export/schedule-pdf?date=2026-07-01
+// Bảng dạng đơn giản (đúng nội dung/cấu trúc, không cần khớp pixel với file gốc)
+export async function GET(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+
+  const date = req.nextUrl.searchParams.get("date");
+  if (!date) return NextResponse.json({ error: "Thiếu tham số date" }, { status: 400 });
+
+  const workDate = new Date(date);
+  const slots = buildOperatingDaySlots();
+
+  const [rosterEntries, assignments] = await Promise.all([
+    prisma.monthRoster.findMany({
+      where: { workDate, status: "WORK" },
+      include: { employee: true, shiftType: true },
+    }),
+    prisma.dailyAssignment.findMany({ where: { workDate }, include: { cartPosition: true } }),
+  ]);
+
+  const assignMap = new Map<string, (typeof assignments)[number]>();
+  for (const a of assignments) assignMap.set(`${a.employeeId}-${a.slotStart}`, a);
+
+  const nameColWidth = 110;
+  const shiftColWidth = 50;
+  const slotColWidth = 26;
+  const pageWidth = nameColWidth + shiftColWidth + slots.length * slotColWidth + 40;
+  const rowHeight = 18;
+  const pageHeight = 80 + (rosterEntries.length + 1) * rowHeight + 40;
+
+  const doc = new PDFDocument({ size: [pageWidth, pageHeight], margin: 20 });
+  const chunks: Buffer[] = [];
+  doc.on("data", (chunk) => chunks.push(chunk));
+
+  const done = new Promise<Buffer>((resolve) => {
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+  });
+
+  doc.fontSize(12).text(`Daily Assignment — ${date}`, 20, 20);
+
+  let y = 45;
+  let x = 20;
+  doc.fontSize(6);
+  doc.text("氏名", x, y, { width: nameColWidth });
+  x += nameColWidth;
+  doc.text("シフト", x, y, { width: shiftColWidth });
+  x += shiftColWidth;
+  for (const s of slots) {
+    doc.text(s.start, x, y, { width: slotColWidth });
+    x += slotColWidth;
+  }
+
+  y += rowHeight;
+  for (const r of rosterEntries) {
+    x = 20;
+    doc.text(r.employee.fullName, x, y, { width: nameColWidth });
+    x += nameColWidth;
+    doc.text(r.shiftType?.code ?? "", x, y, { width: shiftColWidth });
+    x += shiftColWidth;
+    for (const s of slots) {
+      const a = assignMap.get(`${r.employeeId}-${s.start}`);
+      doc.text(a?.cartPosition.code ?? "", x, y, { width: slotColWidth });
+      x += slotColWidth;
+    }
+    y += rowHeight;
+  }
+
+  doc.end();
+  const buffer = await done;
+
+  return new NextResponse(buffer, {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="schedule-${date}.pdf"`,
+    },
+  });
+}
