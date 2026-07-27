@@ -74,6 +74,7 @@ model ShiftType {
 // ---------- Master Roster (tầng tháng) ----------
 enum RosterStatus {
   WORK
+  OFF            // 公休
   PAID_LEAVE   // 有休
   ADJUST_LEAVE // 調整休
 }
@@ -85,7 +86,12 @@ model MonthRoster {
   workDate    DateTime     @db.Date
   shiftTypeId String?
   shiftType   ShiftType?   @relation(fields: [shiftTypeId], references: [id])
+
   status      RosterStatus @default(WORK)
+
+  overrideStartTime String?
+  overrideEndTime   String?
+
   createdBy   String?
   updatedBy   String?
   updatedAt   DateTime     @updatedAt

@@ -37,24 +37,20 @@ export async function GET(req: NextRequest) {
   const rangeStart = new Date(Date.UTC(year, mon - 1, 1));
   const rangeEnd = new Date(Date.UTC(year, mon, 1));
 
-  const [employees, entries] = await Promise.all([
-    prisma.employee.findMany({
-      where: {
-        isActive: true,
-      },
-      orderBy: {
-        fullName: "asc",
-      },
-      select: {
-        id: true,
-        fullName: true,
-        role: true,
-
-        // 基本勤務時間
-        baseStartTime: true,
-        baseEndTime: true,
-      },
-    }),
+const [employees, entries] = await Promise.all([
+  prisma.employee.findMany({
+    where: {
+      isActive: true,
+    },
+    orderBy: {
+      fullName: "asc",
+    },
+    select: {
+      id: true,
+      fullName: true,
+      role: true,
+    },
+  }),
 
     prisma.monthRoster.findMany({
       where: {

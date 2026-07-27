@@ -25,23 +25,55 @@ export default function LoginPage() {
     setLoading(false);
 
     if (res?.error) {
-      setError("Sai email hoặc mật khẩu.");
+      setError("メールアドレスまたはパスワードが正しくありません。");
       return;
     }
+
     router.push("/dashboard");
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <form onSubmit={handleSubmit} className="card" style={{ width: 360 }}>
-        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 22, marginBottom: 4 }}>
-          WHILL Scheduler
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--color-bg)",
+      }}
+    >
+      <form
+        onSubmit={handleSubmit}
+        className="card"
+        style={{ width: 400 }}
+      >
+        <h1
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: 28,
+            marginBottom: 8,
+            textAlign: "center",
+          }}
+        >
+          勤務管理システム
         </h1>
-        <p style={{ color: "var(--color-text-muted)", marginTop: 0, marginBottom: 24, fontSize: 14 }}>
-          Đăng nhập để quản lý lịch làm việc
+
+        <p
+          style={{
+            color: "var(--color-text-muted)",
+            marginTop: 0,
+            marginBottom: 24,
+            fontSize: 14,
+            textAlign: "center",
+          }}
+        >
+          勤務表・シフト管理システム
         </p>
 
-        <label className="label" htmlFor="email">Email</label>
+        <label className="label" htmlFor="email">
+          メールアドレス
+        </label>
+
         <input
           id="email"
           className="input"
@@ -52,7 +84,10 @@ export default function LoginPage() {
           style={{ marginBottom: 16 }}
         />
 
-        <label className="label" htmlFor="password">Mật khẩu</label>
+        <label className="label" htmlFor="password">
+          パスワード
+        </label>
+
         <input
           id="password"
           className="input"
@@ -64,13 +99,25 @@ export default function LoginPage() {
         />
 
         {error && (
-          <p style={{ color: "var(--color-danger)", fontSize: 14, marginTop: -12, marginBottom: 16 }}>
+          <p
+            style={{
+              color: "var(--color-danger)",
+              fontSize: 14,
+              marginTop: -12,
+              marginBottom: 16,
+            }}
+          >
             {error}
           </p>
         )}
 
-        <button className="btn" type="submit" disabled={loading} style={{ width: "100%" }}>
-          {loading ? "Đang đăng nhập..." : "Đăng nhập"}
+        <button
+          className="btn"
+          type="submit"
+          disabled={loading}
+          style={{ width: "100%" }}
+        >
+          {loading ? "ログイン中..." : "ログイン"}
         </button>
       </form>
     </div>
