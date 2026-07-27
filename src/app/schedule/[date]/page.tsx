@@ -4,10 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-type Employee = { id: string; fullName: string };
-type ShiftType = { id: string; code: string };
 type CartPosition = { id: string; code: string; name: string; category: "CART" | "SPECIAL" };
-type RosterEntry = { employeeId: string; employee: Employee; shiftType: ShiftType | null };
+type RosterItem = {
+  employeeId: string;
+  employeeName: string;
+  employeeRole: string;
+  shiftTypeCode: string | null;
+  resolvedStart: string | null;
+  resolvedEnd: string | null;
+  activeStartIdx: number;
+  activeEndIdx: number;
+  isCarryOver: boolean;
+};
 type Assignment = {
   employeeId: string;
   slotStart: string;
@@ -16,40 +24,36 @@ type Assignment = {
   cartPosition: CartPosition;
 };
 
-// Trục thời gian 4:00 -> 3:30 hôm sau, mỗi slot 30 phút (khớp lib/timeSlots.ts phía server)
-function buildSlots() {
+// 1時間ごと・24スロット（4:00始まり）— サーバー側 buildOperatingDaySlots と揃える
+function buildHourlySlots() {
   const slots: { start: string; end: string }[] = [];
   const pad = (n: number) => n.toString().padStart(2, "0");
-  for (let i = 0; i < 48; i++) {
-    const total = 4 * 60 + i * 30;
-    const sH = Math.floor(total / 60) % 24;
-    const sM = total % 60;
-    const eTotal = total + 30;
-    const eH = Math.floor(eTotal / 60) % 24;
-    const eM = eTotal % 60;
-    slots.push({ start: `${pad(sH)}:${pad(sM)}`, end: `${pad(eH)}:${pad(eM)}` });
+  for (let i = 0; i < 24; i++) {
+    const startH = (4 + i) % 24;
+    const endH = (4 + i + 1) % 24;
+    slots.push({ start: `${pad(startH)}:00`, end: `${pad(endH)}:00` });
   }
   return slots;
 }
-const SLOTS = buildSlots();
+const SLOTS = buildHourlySlots();
 
 const POSITION_COLORS: Record<string, string> = {
-  A: "#3b82f6",
-  B: "#a855f7",
-  全: "#22c55e",
-  BF: "#ff8a3d",
-  BREAK: "#64748b",
-  MOVE: "#eab308",
-  WHILL_PREP: "#06b6d4",
-  WHILL_CLEANUP: "#06b6d4",
-  MTG: "#ef4444",
+  A: "#dbeafe",
+  B: "#f3e8ff",
+  全: "#dcfce7",
+  BF: "#ffedd5",
+  BREAK: "#e5e7eb",
+  MOVE: "#fef9c3",
+  WHILL_PREP: "#cffafe",
+  WHILL_CLEANUP: "#cffafe",
+  MTG: "#fee2e2",
 };
 
 export default function SchedulePage() {
   const params = useParams<{ date: string }>();
-  const date = params.date; // "2026-07-01"
+  const date = params.date;
 
-  const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [roster, setRoster] = useState<RosterItem[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [positions, setPositions] = useState<CartPosition[]>([]);
 
@@ -60,7 +64,7 @@ export default function SchedulePage() {
     ]);
     if (schedRes.ok) {
       const data = await schedRes.json();
-      setRoster(data.rosterEntries);
+      setRoster(data.rosterItems);
       setAssignments(data.assignments);
     }
     if (posRes.ok) setPositions(await posRes.json());
@@ -77,17 +81,11 @@ export default function SchedulePage() {
     return map;
   }, [assignments]);
 
-  async function handleChange(employeeId: string, slotStart: string, slotEnd: string, cartPositionId: string) {
+  async function handlePositionChange(employeeId: string, slotStart: string, slotEnd: string, cartPositionId: string) {
     await fetch("/api/schedule", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        employeeId,
-        workDate: date,
-        slotStart,
-        slotEnd,
-        cartPositionId: cartPositionId || null,
-      }),
+      body: JSON.stringify({ employeeId, workDate: date, slotStart, slotEnd, cartPositionId: cartPositionId || null }),
     });
     load();
   }
@@ -95,54 +93,58 @@ export default function SchedulePage() {
   return (
     <div style={{ maxWidth: "100%", padding: "32px 24px" }}>
       <Link href="/roster" style={{ color: "var(--color-text-muted)", fontSize: 14 }}>
-        ← Master Roster
+        ← 月間勤務表に戻る
       </Link>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 20px" }}>
-        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 24, margin: 0 }}>
-          Daily Assignment — {date}
+        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 22, margin: 0 }}>
+          日別スケジュール — {date}
         </h1>
         <div style={{ display: "flex", gap: 8 }}>
-          <a className="btn" href={`/api/export/schedule-excel?date=${date}`}>Xuất Excel</a>
-          <a className="btn" href={`/api/export/schedule-pdf?date=${date}`}>Xuất PDF</a>
+          <a className="btn" href={`/api/export/schedule-excel?date=${date}`}>Excel出力</a>
+          <a className="btn-secondary" href={`/api/export/schedule-pdf?date=${date}`}>PDF出力</a>
         </div>
       </div>
 
       <div className="card" style={{ overflowX: "auto", padding: 0 }}>
-        <table style={{ borderCollapse: "collapse", width: "max-content" }}>
+        <table style={{ width: "max-content" }}>
           <thead>
             <tr>
-              <th style={{ ...thStyle, position: "sticky", left: 0, zIndex: 2 }}>Nhân viên</th>
-              <th style={thStyle}>Ca</th>
+              <th style={{ ...thStyle, position: "sticky", left: 0, zIndex: 2 }}>氏名</th>
+              <th style={thStyle}>シフト</th>
+              <th style={thStyle}>勤務時間</th>
               {SLOTS.map((s) => (
-                <th key={s.start} style={{ ...thStyle, minWidth: 46, fontSize: 10 }}>{s.start}</th>
+                <th key={s.start} style={{ ...thStyle, minWidth: 52 }}>{s.start}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {roster.map((r) => (
               <tr key={r.employeeId}>
-                <td style={{ ...tdStyle, position: "sticky", left: 0, background: "var(--color-surface)", fontWeight: 600 }}>
-                  {r.employee.fullName}
+                <td style={{ ...tdStyle, position: "sticky", left: 0, background: "var(--color-surface)", fontWeight: 600, whiteSpace: "nowrap" }}>
+                  {r.employeeName}
                 </td>
                 <td style={{ ...tdStyle, color: "var(--color-text-muted)", fontSize: 11 }}>
-                  {r.shiftType?.code ?? ""}
+                  {r.isCarryOver ? "明番（引継）" : r.shiftTypeCode ?? ""}
                 </td>
-                {SLOTS.map((s) => {
+                <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>
+                  {r.resolvedStart && r.resolvedEnd ? `${r.resolvedStart}〜${r.resolvedEnd}` : ""}
+                </td>
+                {SLOTS.map((s, idx) => {
+                  const isActive = idx >= r.activeStartIdx && idx < r.activeEndIdx;
+                  if (!isActive) {
+                    return <td key={s.start} style={{ ...tdStyle, background: "var(--color-surface-2)" }} />;
+                  }
                   const a = assignMap.get(`${r.employeeId}-${s.start}`);
-                  const color = a ? POSITION_COLORS[a.cartPosition.code] ?? "#334155" : "transparent";
+                  const color = a ? POSITION_COLORS[a.cartPosition.code] ?? "#f1f5f9" : "#ffffff";
                   return (
                     <td key={s.start} style={{ ...tdStyle, padding: 0 }}>
                       <select
                         value={a?.cartPositionId ?? ""}
-                        onChange={(e) => handleChange(r.employeeId, s.start, s.end, e.target.value)}
+                        onChange={(e) => handlePositionChange(r.employeeId, s.start, s.end, e.target.value)}
                         style={{
-                          width: 46,
-                          height: 30,
-                          background: color,
-                          color: a ? "#0b0f1a" : "var(--color-text-muted)",
-                          border: "1px solid var(--color-border)",
-                          fontSize: 10,
-                          textAlign: "center",
+                          width: 52, height: 30, background: color,
+                          color: "var(--color-text)", border: "1px solid var(--color-border)",
+                          fontSize: 11, textAlign: "center",
                         }}
                       >
                         <option value=""></option>
@@ -162,26 +164,32 @@ export default function SchedulePage() {
       <div style={{ display: "flex", gap: 16, marginTop: 16, flexWrap: "wrap", fontSize: 12 }}>
         {positions.map((p) => (
           <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 12, height: 12, borderRadius: 3, background: POSITION_COLORS[p.code] ?? "#334155", display: "inline-block" }} />
+            <span style={{ width: 12, height: 12, borderRadius: 3, background: POSITION_COLORS[p.code] ?? "#f1f5f9", border: "1px solid var(--color-border)", display: "inline-block" }} />
             {p.code} — {p.name}
           </div>
         ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 12, height: 12, borderRadius: 3, background: "var(--color-surface-2)", border: "1px solid var(--color-border)", display: "inline-block" }} />
+          勤務時間外（編集不可）
+        </div>
       </div>
+
+      <p style={{ color: "var(--color-text-muted)", fontSize: 13, marginTop: 8 }}>
+        並び順: INC → 開始時刻の早い順（前日22時〜翌8時勤務の人は、当日シートでは「明番（引継）」として4:00〜8:00のみ表示）
+      </p>
     </div>
   );
 }
 
 const thStyle: React.CSSProperties = {
   padding: "8px 6px",
-  textAlign: "left",
+  textAlign: "center",
   fontSize: 12,
   color: "var(--color-text-muted)",
-  borderBottom: "1px solid var(--color-border)",
-  background: "var(--color-surface)",
+  background: "var(--color-surface-2)",
 };
 
 const tdStyle: React.CSSProperties = {
   padding: "4px 6px",
-  borderBottom: "1px solid var(--color-border)",
   fontSize: 12,
 };

@@ -16,7 +16,14 @@ Nền tảng hệ thống + màn hình nhập lịch chính (Master Roster, Dail
 - Click vào số ngày trong Master Roster sẽ mở thẳng Daily Assignment của ngày đó.
 - File xuất ra giữ đúng **cấu trúc và nội dung** (tên cột, ký hiệu A/B/全/BF...) như file gốc — không cần khớp pixel-perfect (font/màu/merge cell) theo yêu cầu.
 
-**Còn thiếu (Phase 2 trở đi)**: cảnh báo thiếu người/xung đột tự động (Validator), auto-assign bằng thuật toán tối ưu, nhập NG/OK/rotation pattern qua UI (hiện phải nhập thẳng qua Prisma Studio hoặc nhờ tôi), Incident Logger, Audit Log UI.
+**Phase 2 — Giờ làm cơ bản, Rotation Pattern, giao diện tiếng Nhật hoàn chỉnh**
+- Mỗi nhân viên có **giờ làm cơ bản** (基本勤務時間) riêng, tự động áp dụng cho mọi ngày làm việc — không cần nhập tay từng ngày.
+- Có thể **ghi đè giờ làm cho 1 ngày cụ thể** (ví dụ đổi giờ ngày 15/8) mà không ảnh hưởng các ngày khác.
+- **Áp dụng Pattern (パターン適用)**: chọn 1 hoặc nhiều nhân viên, chọn 4勤2休/3勤2休/5勤2休, chọn ngày mốc → hệ thống tự tính và điền出勤/公休 cho cả khoảng thời gian, **không đè lên** các ngày đã xin 有休/調整休.
+- Master Roster giờ hiển thị **toàn bộ ngày trong tháng kèm thứ (月火水木金土日)**, mỗi ô hiện đúng dạng `8-17`, `13-22`, `公休`, `有休`, `調整休` giống bảng chấm công thật.
+- Toàn bộ giao diện chuyển sang **tiếng Nhật tự nhiên** (従業員管理, 月間勤務表, 日別スケジュール, Excel出力...) và **nền trắng, chữ đen/xám** theo phong cách hệ thống nghiệp vụ.
+- Excel/PDF xuất ra giờ có thêm cột **giờ làm việc thực tế** đã tính toán.
+- Không xoá/động vào dữ liệu nhân viên, Roster, DailyAssignment đã nhập trước đó — chỉ thêm field mới (nullable).
 
 ## Bạn cần chuẩn bị (đều có gói miễn phí để bắt đầu)
 

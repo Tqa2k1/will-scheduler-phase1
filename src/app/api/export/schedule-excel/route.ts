@@ -3,29 +3,23 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { buildOperatingDaySlots } from "@/lib/timeSlots";
+import { buildDailyRosterView } from "@/lib/dailyRoster";
 import ExcelJS from "exceljs";
 
 // GET /api/export/schedule-excel?date=2026-07-01
-// Giữ đúng cấu trúc: nhân viên theo hàng, slot 30 phút theo cột, giá trị = mã vị trí (A/B/全/BF/休憩...)
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });
 
   const date = req.nextUrl.searchParams.get("date");
-  if (!date) return NextResponse.json({ error: "Thiếu tham số date" }, { status: 400 });
+  if (!date) return NextResponse.json({ error: "date パラメータが必要です" }, { status: 400 });
 
   const workDate = new Date(date);
   const slots = buildOperatingDaySlots();
 
-  const [rosterEntries, assignments] = await Promise.all([
-    prisma.monthRoster.findMany({
-      where: { workDate, status: "WORK" },
-      include: { employee: true, shiftType: true },
-    }),
-    prisma.dailyAssignment.findMany({
-      where: { workDate },
-      include: { cartPosition: true },
-    }),
+  const [rosterItems, assignments] = await Promise.all([
+    buildDailyRosterView(workDate),
+    prisma.dailyAssignment.findMany({ where: { workDate }, include: { cartPosition: true } }),
   ]);
 
   const assignMap = new Map<string, (typeof assignments)[number]>();
@@ -35,22 +29,26 @@ export async function GET(req: NextRequest) {
   const sheet = workbook.addWorksheet(date);
 
   sheet.getColumn(1).width = 20;
-  sheet.getColumn(2).width = 10;
+  sheet.getColumn(2).width = 12;
+  sheet.getColumn(3).width = 14;
   const header = sheet.getRow(1);
   header.getCell(1).value = "氏名";
   header.getCell(2).value = "シフト";
+  header.getCell(3).value = "勤務時間";
   slots.forEach((s, i) => {
-    header.getCell(i + 3).value = s.start;
-    sheet.getColumn(i + 3).width = 7;
+    header.getCell(i + 4).value = s.start;
+    sheet.getColumn(i + 4).width = 6;
   });
 
-  rosterEntries.forEach((r, rowIdx) => {
+  rosterItems.forEach((r, rowIdx) => {
     const row = sheet.getRow(rowIdx + 2);
-    row.getCell(1).value = r.employee.fullName;
-    row.getCell(2).value = r.shiftType?.code ?? "";
+    row.getCell(1).value = r.employeeName;
+    row.getCell(2).value = r.isCarryOver ? "明番（引継）" : r.shiftTypeCode ?? "";
+    row.getCell(3).value = r.resolvedStart && r.resolvedEnd ? `${r.resolvedStart}〜${r.resolvedEnd}` : "";
     slots.forEach((s, i) => {
+      if (i < r.activeStartIdx || i >= r.activeEndIdx) return; // 勤務時間外は空欄のまま
       const a = assignMap.get(`${r.employeeId}-${s.start}`);
-      row.getCell(i + 3).value = a?.cartPosition.code ?? "";
+      row.getCell(i + 4).value = a?.cartPosition.code ?? "";
     });
   });
 

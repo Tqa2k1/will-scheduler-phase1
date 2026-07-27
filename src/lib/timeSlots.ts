@@ -1,5 +1,5 @@
-// Trục thời gian vận hành: 04:00 hôm nay -> 03:30 hôm sau, mỗi slot 30 phút (48 slot/ngày)
-// Đúng theo cấu trúc sheet-ngày trong file Excel gốc (Bước 1)
+// Trục thời gian vận hành: 04:00 hôm nay -> 03:00-04:00 hôm sau, mỗi slot 1 TIẾNG (24 slot/ngày)
+// Đổi từ 30 phút -> 1 tiếng theo yêu cầu thực tế sử dụng
 
 export type TimeSlot = { start: string; end: string };
 
@@ -9,19 +9,21 @@ function pad(n: number) {
 
 export function buildOperatingDaySlots(): TimeSlot[] {
   const slots: TimeSlot[] = [];
-  // 4:00 -> 23:30 (40 slot), rồi 0:00 -> 3:30 hôm sau (8 slot) = 48 slot
   const startHour = 4;
-  for (let i = 0; i < 48; i++) {
-    const totalMinutes = startHour * 60 + i * 30;
-    const startH = Math.floor(totalMinutes / 60) % 24;
-    const startM = totalMinutes % 60;
-    const endTotal = totalMinutes + 30;
-    const endH = Math.floor(endTotal / 60) % 24;
-    const endM = endTotal % 60;
-    slots.push({
-      start: `${pad(startH)}:${pad(startM)}`,
-      end: `${pad(endH)}:${pad(endM)}`,
-    });
+  for (let i = 0; i < 24; i++) {
+    const startH = (startHour + i) % 24;
+    const endH = (startHour + i + 1) % 24;
+    slots.push({ start: `${pad(startH)}:00`, end: `${pad(endH)}:00` });
   }
   return slots;
+}
+
+// 実時刻(0-23時)を「営業日インデックス」(0=4:00, ..., 23=3:00-4:00)に変換
+export function operatingIndex(hour: number): number {
+  return ((hour - 4) % 24 + 24) % 24;
+}
+
+// "08:00" 等の文字列から時（0-23）を取り出す
+export function hourOf(time: string): number {
+  return Number(time.split(":")[0]);
 }

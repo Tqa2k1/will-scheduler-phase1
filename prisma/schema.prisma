@@ -49,6 +49,8 @@ model Employee {
   commuteType  CommuteType?
   isActive     Boolean      @default(true)
   note         String?
+  baseStartTime String?     // 基本勤務時間の開始（例: "08:00"）— 未設定なら ShiftType の時間を使う
+  baseEndTime   String?     // 基本勤務時間の終了（例: "17:00"）
   user         User?
   monthRoster        MonthRoster[]
   dailyAssignments   DailyAssignment[]
@@ -74,7 +76,7 @@ model ShiftType {
 // ---------- Master Roster (tầng tháng) ----------
 enum RosterStatus {
   WORK
-  OFF            // 公休
+  OFF          // 公休（ローテーションパターンによる定期休み）
   PAID_LEAVE   // 有休
   ADJUST_LEAVE // 調整休
 }
@@ -86,12 +88,9 @@ model MonthRoster {
   workDate    DateTime     @db.Date
   shiftTypeId String?
   shiftType   ShiftType?   @relation(fields: [shiftTypeId], references: [id])
-
   status      RosterStatus @default(WORK)
-
-  overrideStartTime String?
-  overrideEndTime   String?
-
+  overrideStartTime String? // その日だけの勤務開始時間（例外）— 未設定なら基本勤務時間/ShiftTypeを使う
+  overrideEndTime   String? // その日だけの勤務終了時間（例外）
   createdBy   String?
   updatedBy   String?
   updatedAt   DateTime     @updatedAt
@@ -172,13 +171,16 @@ model Break {
   @@index([employeeId, workDate])
 }
 
-// ---------- Rotation pattern (4勤2休...) — để trống cấu hình, chờ quyết định sau ----------
+// ---------- Rotation pattern (4勤2休、3勤2休、5勤2休...) ----------
+// patternDefinition の構造（固定フォーマット）:
+// { "cycleDays": 6, "pattern": ["WORK","WORK","WORK","WORK","OFF","OFF"] }
+// ※ 出勤(WORK)/公休(OFF)のサイクルのみを決定し、勤務時間・シフト種別は決定しない
 model RotationPattern {
   id               String   @id @default(cuid())
   code             String   @unique
   name             String
-  patternDefinition Json    // cấu trúc tự do, định nghĩa sau
-  isActive         Boolean  @default(false)
+  patternDefinition Json
+  isActive         Boolean  @default(true)
 
   employees EmployeeRotationPattern[]
 }
@@ -189,8 +191,11 @@ model EmployeeRotationPattern {
   employee          Employee        @relation(fields: [employeeId], references: [id])
   rotationPatternId String
   rotationPattern   RotationPattern @relation(fields: [rotationPatternId], references: [id])
+  anchorDate        DateTime        @db.Date // 基準日（サイクルの1日目に対応する実際の日付）
+  isCurrent         Boolean         @default(true) // 現在適用中かどうか（履歴保持のため過去分はfalseにする）
+  createdAt         DateTime        @default(now())
 
-  @@unique([employeeId, rotationPatternId])
+  @@index([employeeId, isCurrent])
 }
 
 // ---------- Ràng buộc cá nhân (NG/OK) ----------

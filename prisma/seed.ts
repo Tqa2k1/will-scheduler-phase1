@@ -47,6 +47,30 @@ async function main() {
     await prisma.cartPosition.upsert({ where: { code: p.code }, update: {}, create: p });
   }
 
+  // --- Rotation Pattern (4勤2休・3勤2休・5勤2休) ---
+  // pattern配列は「出勤(WORK)/公休(OFF)」のサイクルのみを表す。勤務時間・シフトは別途、
+  // 従業員の基本勤務時間 or ShiftType で決まる（resolveWorkTime を参照）。
+  const rotationPatterns = [
+    {
+      code: "4KIN2KYU",
+      name: "4勤2休",
+      patternDefinition: { cycleDays: 6, pattern: ["WORK", "WORK", "WORK", "WORK", "OFF", "OFF"] },
+    },
+    {
+      code: "3KIN2KYU",
+      name: "3勤2休",
+      patternDefinition: { cycleDays: 5, pattern: ["WORK", "WORK", "WORK", "OFF", "OFF"] },
+    },
+    {
+      code: "5KIN2KYU",
+      name: "5勤2休",
+      patternDefinition: { cycleDays: 7, pattern: ["WORK", "WORK", "WORK", "WORK", "WORK", "OFF", "OFF"] },
+    },
+  ];
+  for (const rp of rotationPatterns) {
+    await prisma.rotationPattern.upsert({ where: { code: rp.code }, update: {}, create: rp });
+  }
+
   console.log("Seed xong. Đăng nhập bằng admin@pacificcrew.jp / ChangeMe123! rồi đổi mật khẩu ngay.");
 }
 
