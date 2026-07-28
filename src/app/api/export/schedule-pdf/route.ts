@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
   doc.end();
   const buffer = await done;
 
-  return new NextResponse(buffer, {
+  return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="schedule-${date}.pdf"`,
