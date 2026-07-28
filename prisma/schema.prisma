@@ -30,9 +30,12 @@ model User {
 }
 
 // ---------- Nhân viên ----------
+// STAFF = 社員, CONTRACT = 契約社員, PARTTIME = バイト（既存のSTAFF/OJT/INCデータはそのまま有効）
 enum EmployeeRole {
   INC
   STAFF
+  CONTRACT
+  PARTTIME
   OJT
 }
 
@@ -100,7 +103,7 @@ model MonthRoster {
   @@index([workDate])
 }
 
-// ---------- Vị trí công việc (A cart / B cart / 全 / BF...) ----------
+// ---------- 業務 (Vị trí công việc: A cart / B cart / 全 / BF...) ----------
 enum PositionCategory {
   CART
   SPECIAL // BF, 休憩, 移動, WHILL準備, WHILL片付け, MTG
@@ -111,10 +114,41 @@ model CartPosition {
   code     String           @unique // A, B, 全, BF, BREAK, MOVE, WHILL_PREP, WHILL_CLEANUP, MTG
   name     String
   category PositionCategory
+  isActive           Boolean  @default(true)  // 使用する/しない
+  description        String?                  // 業務の説明
+  operatingStartTime String?                  // 業務の開始時間（例: "05:00"）
+  operatingEndTime   String?                  // 業務の終了時間（例: "23:00"）
 
   operatingHours  CartOperatingHours[]
   demandTemplates DemandTemplate[]
   dailyAssignments DailyAssignment[]
+  requirements    TaskRequirement[]
+}
+
+// ---------- 業務要件: 各業務に必要な人数・対象role ----------
+// 現時点では「対象role」「必要人数」のみのシンプルな要件。将来的に休憩ルール・連続勤務上限・
+// 業務ごとの最低/最大人数・特定社員のNG/OKなど拡張予定（拡張しやすいよう独立モデルにしている）。
+model TaskRequirement {
+  id                 String       @id @default(cuid())
+  cartPositionId     String
+  cartPosition       CartPosition @relation(fields: [cartPositionId], references: [id])
+  appliesToAllRoles  Boolean      @default(true)  // true = 全役割対象、false = targetRolesのみ対象
+  targetRoles        EmployeeRole[]                // appliesToAllRoles=false のときに使用
+  requiredCount      Int          @default(1)      // 必要人数
+  note               String?
+  isActive           Boolean      @default(true)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([cartPositionId])
+}
+
+// ---------- 優先順位: 自動アサイン時にどのroleを優先するか ----------
+model RolePriority {
+  id            String       @id @default(cuid())
+  role          EmployeeRole @unique
+  priorityOrder Int          // 小さいほど優先度が高い
+  updatedAt     DateTime     @updatedAt
 }
 
 // Cấu hình giờ hoạt động từng cart theo template ngày (thường/cuối tuần...)

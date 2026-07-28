@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 type CartPosition = { id: string; code: string; name: string; category: "CART" | "SPECIAL" };
 type RosterItem = {
@@ -51,7 +51,14 @@ const POSITION_COLORS: Record<string, string> = {
 
 export default function SchedulePage() {
   const params = useParams<{ date: string }>();
+  const router = useRouter();
   const date = params.date;
+
+  function shiftDate(days: number) {
+    const d = new Date(date + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() + days);
+    router.push(`/schedule/${d.toISOString().slice(0, 10)}`);
+  }
 
   const [roster, setRoster] = useState<RosterItem[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -95,10 +102,21 @@ export default function SchedulePage() {
       <Link href="/roster" style={{ color: "var(--color-text-muted)", fontSize: 14 }}>
         ← 月間勤務表に戻る
       </Link>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 20px" }}>
-        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 22, margin: 0 }}>
-          日別スケジュール — {date}
-        </h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 20px", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button className="btn-secondary" onClick={() => shiftDate(-1)} style={{ padding: "6px 12px" }}>← 前日</button>
+          <h1 style={{ fontFamily: "var(--font-display)", fontSize: 22, margin: 0 }}>
+            日別スケジュール — {date}
+          </h1>
+          <button className="btn-secondary" onClick={() => shiftDate(1)} style={{ padding: "6px 12px" }}>翌日 →</button>
+          <input
+            className="input"
+            type="date"
+            value={date}
+            onChange={(e) => router.push(`/schedule/${e.target.value}`)}
+            style={{ width: 150 }}
+          />
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
           <a className="btn" href={`/api/export/schedule-excel?date=${date}`}>Excel出力</a>
           <a className="btn-secondary" href={`/api/export/schedule-pdf?date=${date}`}>PDF出力</a>

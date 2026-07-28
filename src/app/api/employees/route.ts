@@ -6,7 +6,7 @@ import { z } from "zod";
 
 const EmployeeInput = z.object({
   fullName: z.string().min(1),
-  role: z.enum(["INC", "STAFF", "OJT"]).default("STAFF"),
+  role: z.enum(["INC", "STAFF", "CONTRACT", "PARTTIME", "OJT"]).default("STAFF"),
   commuteType: z.enum(["TAXI_ONE_WAY", "OWN_CAR", "OTHER"]).optional(),
   note: z.string().optional(),
   baseStartTime: z.string().optional(), // 基本勤務時間 開始 例:"08:00"

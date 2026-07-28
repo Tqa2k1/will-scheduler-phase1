@@ -9,10 +9,10 @@ async function main() {
   const passwordHash = await bcrypt.hash("ChangeMe123!", 10);
   await prisma.user.upsert({
     where: { email: "admin@pacificcrew.jp" },
-    update: {},
+    update: { name: "システム管理者" },
     create: {
       email: "admin@pacificcrew.jp",
-      name: "Quản trị viên",
+      name: "システム管理者",
       passwordHash,
       role: "ADMIN",
     },
@@ -31,11 +31,11 @@ async function main() {
     await prisma.shiftType.upsert({ where: { code: s.code }, update: {}, create: s });
   }
 
-  // --- Vị trí công việc (Bước 1: A/B/全/BF + các trạng thái đặc biệt) ---
+  // --- 業務 (Bước 1: A/B/全/BF + các trạng thái đặc biệt) ---
   const positions = [
-    { code: "A", name: "A cart", category: "CART" as const },
-    { code: "B", name: "B cart", category: "CART" as const },
-    { code: "全", name: "Toàn bộ cart", category: "CART" as const },
+    { code: "A", name: "Aカート", category: "CART" as const, operatingStartTime: "05:00", operatingEndTime: "23:00" },
+    { code: "B", name: "Bカート", category: "CART" as const, operatingStartTime: "05:00", operatingEndTime: "23:00" },
+    { code: "全", name: "全カート", category: "CART" as const, operatingStartTime: "05:00", operatingEndTime: "23:00" },
     { code: "BF", name: "BF", category: "SPECIAL" as const },
     { code: "BREAK", name: "休憩 (Nghỉ giải lao)", category: "SPECIAL" as const },
     { code: "MOVE", name: "移動 (Di chuyển)", category: "SPECIAL" as const },
@@ -45,6 +45,22 @@ async function main() {
   ];
   for (const p of positions) {
     await prisma.cartPosition.upsert({ where: { code: p.code }, update: {}, create: p });
+  }
+
+  // --- 優先順位（自動アサイン時の初期値。管理者が後からUIで変更可能） ---
+  // INCは業務アサイン対象外（監督役割）のため優先順位の対象に含めない
+  const rolePriorities: { role: "STAFF" | "CONTRACT" | "PARTTIME" | "OJT"; priorityOrder: number }[] = [
+    { role: "STAFF", priorityOrder: 1 },
+    { role: "CONTRACT", priorityOrder: 2 },
+    { role: "PARTTIME", priorityOrder: 3 },
+    { role: "OJT", priorityOrder: 4 },
+  ];
+  for (const rp of rolePriorities) {
+    await prisma.rolePriority.upsert({
+      where: { role: rp.role },
+      update: {},
+      create: rp,
+    });
   }
 
   // --- Rotation Pattern (4勤2休・3勤2休・5勤2休) ---

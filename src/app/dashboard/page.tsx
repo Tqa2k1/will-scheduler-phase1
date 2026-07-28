@@ -29,6 +29,7 @@ export default async function DashboardPage() {
         </div>
         <nav style={{ display: "flex", gap: 16 }}>
           <Link href="/roster">月間勤務表</Link>
+          <Link href="/tasks">業務管理</Link>
           <Link href="/employees">従業員管理</Link>
         </nav>
       </header>

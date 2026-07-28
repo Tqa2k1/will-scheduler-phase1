@@ -136,9 +136,12 @@ export default function RosterPage() {
               <th style={{ ...thStyle, position: "sticky", left: 0, zIndex: 2 }}>氏名</th>
               {days.map((d) => {
                 const wd = new Date(year, month - 1, d).getDay();
+                const dateStr = `${year}-${pad2(month)}-${pad2(d)}`;
                 return (
                   <th key={d} style={{ ...thStyle, minWidth: 56, color: wd === 0 ? "var(--color-danger)" : wd === 6 ? "var(--color-accent)" : "var(--color-text-muted)" }}>
-                    {d}<br /><span style={{ fontSize: 10 }}>{WEEKDAY_JP[wd]}</span>
+                    <Link href={`/schedule/${dateStr}`} style={{ color: "inherit" }}>
+                      {d}<br /><span style={{ fontSize: 10 }}>{WEEKDAY_JP[wd]}</span>
+                    </Link>
                   </th>
                 );
               })}
