@@ -12,10 +12,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ---------- Tài khoản đăng nhập (Admin / INC) ----------
+// ---------- Tài khoản đăng nhập (管理者 / 従業員) ----------
 enum UserRole {
   ADMIN
-  INC
+  INC      // 現在未使用（将来の拡張用に残す）
+  EMPLOYEE // 従業員アカウント：月間・日別スケジュールの閲覧のみ
 }
 
 model User {
@@ -23,7 +24,7 @@ model User {
   email        String   @unique
   passwordHash String
   name         String
-  role         UserRole @default(INC)
+  role         UserRole @default(EMPLOYEE)
   employeeId   String?  @unique
   employee     Employee? @relation(fields: [employeeId], references: [id])
   createdAt    DateTime @default(now())
@@ -52,6 +53,7 @@ model Employee {
   commuteType  CommuteType?
   isActive     Boolean      @default(true)
   note         String?
+  contactEmail String?     // 連絡先メールアドレス（月間スケジュール確定時の通知送信用）
   baseStartTime String?     // 基本勤務時間の開始（例: "08:00"）— 未設定なら ShiftType の時間を使う
   baseEndTime   String?     // 基本勤務時間の終了（例: "17:00"）
   user         User?

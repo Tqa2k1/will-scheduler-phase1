@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { resolveWorkTime, formatTimeRange, STATUS_LABEL } from "@/lib/workTime";
 
 type Employee = {
@@ -32,6 +33,8 @@ function pad2(n: number) {
 }
 
 export default function RosterPage() {
+  const { data: session } = useSession();
+  const isAdmin = session?.user.role === "ADMIN";
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -43,6 +46,7 @@ export default function RosterPage() {
 
   const [editCell, setEditCell] = useState<{ employeeId: string; day: number } | null>(null);
   const [patternModalOpen, setPatternModalOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const monthStr = `${year}-${pad2(month)}`;
   const numDays = daysInMonth(year, month);
@@ -108,6 +112,23 @@ export default function RosterPage() {
     load();
   }
 
+  async function handleConfirmMonth() {
+    if (!confirm(`${monthStr} の勤務シフトを確定し、メール登録済みの従業員に通知を送信します。よろしいですか？`)) return;
+    setConfirming(true);
+    const res = await fetch("/api/roster/confirm-month", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ month: monthStr }),
+    });
+    setConfirming(false);
+    if (res.ok) {
+      const data = await res.json();
+      alert(`通知メールを送信しました（成功: ${data.sent}件 / 失敗: ${data.failed}件 / 対象: ${data.totalEligible}件）`);
+    } else {
+      alert("スケジュール確定に失敗しました。");
+    }
+  }
+
   return (
     <div style={{ maxWidth: 1500, margin: "0 auto", padding: "32px 24px" }}>
       <Link href="/dashboard" style={{ color: "var(--color-text-muted)", fontSize: 14 }}>
@@ -124,8 +145,13 @@ export default function RosterPage() {
             ))}
           </select>
           <input className="input" type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} style={{ width: 90 }} />
-          <button className="btn-secondary" onClick={() => setPatternModalOpen(true)}>パターン適用</button>
-          <a className="btn" href={`/api/export/roster-excel?month=${monthStr}`}>Excel出力</a>
+          {isAdmin && <button className="btn-secondary" onClick={() => setPatternModalOpen(true)}>パターン適用</button>}
+          {isAdmin && (
+            <button className="btn" onClick={handleConfirmMonth} disabled={confirming}>
+              {confirming ? "送信中..." : "月間スケジュール確定"}
+            </button>
+          )}
+          <a className="btn-secondary" href={`/api/export/roster-excel?month=${monthStr}`}>Excel出力</a>
         </div>
       </div>
 
@@ -158,13 +184,13 @@ export default function RosterPage() {
                   const label = cellLabel(emp, entry);
                   const isEditing = editCell?.employeeId === emp.id && editCell?.day === d;
                   return (
-                    <td key={d} style={{ ...tdStyle, textAlign: "center", cursor: "pointer", position: "relative" }}
-                      onClick={() => setEditCell({ employeeId: emp.id, day: d })}
+                    <td key={d} style={{ ...tdStyle, textAlign: "center", cursor: isAdmin ? "pointer" : "default", position: "relative" }}
+                      onClick={() => isAdmin && setEditCell({ employeeId: emp.id, day: d })}
                     >
                       <span style={{ fontSize: 12, color: label === "公休" ? "var(--color-text-muted)" : "var(--color-text)" }}>
                         {label}
                       </span>
-                      {isEditing && (
+                      {isAdmin && isEditing && (
                         <CellEditor
                           employee={emp}
                           entry={entry}

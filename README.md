@@ -85,3 +85,27 @@ whill-scheduler/
 - **Phase 1**: màn hình Master Roster (lịch tháng) + Daily Assignment (lịch ngày theo slot 30 phút), xuất Excel/PDF.
 - **Phase 2**: cảnh báo thiếu người/xung đột tự động.
 - **Phase 3-4**: tự động tạo lịch (auto-assign) bằng thuật toán tối ưu.
+
+---
+
+## Phase 3 — Phân quyền, tự động phân công theo giờ, xóa 業務, email thông báo
+
+- **Phân quyền 2 cấp**: `管理者`(Admin, toàn quyền) và `従業員`(Employee, chỉ xem 月間/日別スケジュール, không sửa/xóa được gì, không vào được `/employees` `/tasks`). Trang `/users` (chỉ Admin thấy) để tạo tài khoản mới, có thể gắn với 1 nhân viên cụ thể.
+- **Đã sửa lỗi đồng bộ dữ liệu**: nhân viên đã "退職にする" (vô hiệu hóa/soft-delete) trước đây vẫn còn hiện trong 日別スケジュール dù đã mất khỏi 月間勤務表 — nguyên nhân do hàm dùng chung `buildDailyRosterView` thiếu điều kiện lọc `employee.isActive`. Đã sửa, áp dụng luôn cho cả Excel/PDF export.
+- **自動割り当て (nút trên `/schedule/[ngày]`)**: tự động xoay vòng nhân viên (trừ INC) qua 車A/車B/全/休憩 theo từng giờ, người dư ra được để trống. Có hàng "配置状況" hiển thị đỏ khi giờ đó thiếu người phụ trách 車A/車B/全 (休憩 thiếu không tính là lỗi).
+- **Xóa 業務** (`/tasks`): nút xóa có confirm. Nếu 業務 đã từng được dùng trong lịch, hệ thống tự chuyển sang "使用しない" thay vì xóa cứng, tránh hỏng dữ liệu lịch sử.
+- **Email thông báo lịch tháng**: thêm trường `連絡先メール` cho nhân viên (`/employees`). Nút "月間スケジュール確定" trên `/roster` gửi email qua Resend API tới các nhân viên đã đăng ký email, kèm link đăng nhập. Không gửi khi chỉnh sửa thông thường, chỉ gửi khi bấm nút này.
+- Cải thiện nút bấm: hiệu ứng hover/focus rõ ràng hơn, class `.btn-danger` riêng cho thao tác xóa/nguy hiểm.
+
+### Biến môi trường mới (tùy chọn)
+Không bắt buộc để app chạy — nếu bỏ trống, tính năng gửi email sẽ chỉ báo lỗi gửi (không làm sập app).
+
+| Biến | Mô tả |
+|---|---|
+| `RESEND_API_KEY` | Lấy từ tài khoản resend.com (có gói miễn phí) |
+| `RESEND_FROM_EMAIL` | Địa chỉ email gửi đi — cần xác thực domain trên Resend trước khi dùng thật |
+
+### Tài khoản Employee (従業員) — cách tạo và dùng
+1. Đăng nhập bằng tài khoản Admin → vào `/users`.
+2. Tạo tài khoản mới, chọn quyền "従業員（閲覧のみ）", có thể gắn với 1 nhân viên trong danh sách.
+3. Gửi email + mật khẩu ban đầu cho nhân viên đó (hiện tại chưa có chức năng nhân viên tự đổi mật khẩu — có thể bổ sung sau nếu cần).

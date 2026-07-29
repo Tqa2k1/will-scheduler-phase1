@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 
 type CartPosition = { id: string; code: string; name: string; category: "CART" | "SPECIAL" };
 type RosterItem = {
@@ -24,7 +25,8 @@ type Assignment = {
   cartPosition: CartPosition;
 };
 
-// 1時間ごと・24スロット（4:00始まり）— サーバー側 buildOperatingDaySlots と揃える
+const PRODUCTIVE_CODES = ["A", "B", "全"];
+
 function buildHourlySlots() {
   const slots: { start: string; end: string }[] = [];
   const pad = (n: number) => n.toString().padStart(2, "0");
@@ -50,6 +52,8 @@ const POSITION_COLORS: Record<string, string> = {
 };
 
 export default function SchedulePage() {
+  const { data: session } = useSession();
+  const isAdmin = session?.user.role === "ADMIN";
   const params = useParams<{ date: string }>();
   const router = useRouter();
   const date = params.date;
@@ -63,6 +67,7 @@ export default function SchedulePage() {
   const [roster, setRoster] = useState<RosterItem[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [positions, setPositions] = useState<CartPosition[]>([]);
+  const [autoAssigning, setAutoAssigning] = useState(false);
 
   async function load() {
     const [schedRes, posRes] = await Promise.all([
@@ -88,6 +93,27 @@ export default function SchedulePage() {
     return map;
   }, [assignments]);
 
+  // 時間ごとに 車A/車B/全 が誰かに割り当てられているか確認し、不足を判定
+  const shortageBySlot = useMemo(() => {
+    const covered = new Map<string, Set<string>>();
+    for (const a of assignments) {
+      if (!covered.has(a.slotStart)) covered.set(a.slotStart, new Set());
+      covered.get(a.slotStart)!.add(a.cartPosition.code);
+    }
+    const result = new Map<string, string[]>();
+    for (const s of SLOTS) {
+      const coveredCodes = covered.get(s.start) ?? new Set();
+      const missing = PRODUCTIVE_CODES.filter((c) => !coveredCodes.has(c));
+      // その時間に誰も勤務していない（roster側でactiveな人が0人）場合は不足とみなさない
+      const hasActiveStaff = roster.some((r) => {
+        const idx = SLOTS.findIndex((slot) => slot.start === s.start);
+        return idx >= r.activeStartIdx && idx < r.activeEndIdx && r.employeeRole !== "INC";
+      });
+      result.set(s.start, hasActiveStaff ? missing : []);
+    }
+    return result;
+  }, [assignments, roster]);
+
   async function handlePositionChange(employeeId: string, slotStart: string, slotEnd: string, cartPositionId: string) {
     await fetch("/api/schedule", {
       method: "POST",
@@ -95,6 +121,26 @@ export default function SchedulePage() {
       body: JSON.stringify({ employeeId, workDate: date, slotStart, slotEnd, cartPositionId: cartPositionId || null }),
     });
     load();
+  }
+
+  async function handleAutoAssign() {
+    if (!confirm("この日の配置を自動生成します。既存の手動編集は上書きされます。よろしいですか？")) return;
+    setAutoAssigning(true);
+    const res = await fetch("/api/schedule/auto-assign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date }),
+    });
+    setAutoAssigning(false);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.shortageCount > 0) {
+        alert(`自動割り当てが完了しました。人員不足のコマが ${data.shortageCount} 件あります（赤色で表示されます）。`);
+      }
+      load();
+    } else {
+      alert("自動割り当てに失敗しました。");
+    }
   }
 
   return (
@@ -118,7 +164,12 @@ export default function SchedulePage() {
           />
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <a className="btn" href={`/api/export/schedule-excel?date=${date}`}>Excel出力</a>
+          {isAdmin && (
+            <button className="btn" onClick={handleAutoAssign} disabled={autoAssigning}>
+              {autoAssigning ? "生成中..." : "自動割り当て"}
+            </button>
+          )}
+          <a className="btn-secondary" href={`/api/export/schedule-excel?date=${date}`}>Excel出力</a>
           <a className="btn-secondary" href={`/api/export/schedule-pdf?date=${date}`}>PDF出力</a>
         </div>
       </div>
@@ -133,6 +184,29 @@ export default function SchedulePage() {
               {SLOTS.map((s) => (
                 <th key={s.start} style={{ ...thStyle, minWidth: 52 }}>{s.start}</th>
               ))}
+            </tr>
+            <tr>
+              <th style={{ ...thStyle, position: "sticky", left: 0, zIndex: 2, fontWeight: 400 }}>配置状況</th>
+              <th style={thStyle}></th>
+              <th style={thStyle}></th>
+              {SLOTS.map((s) => {
+                const missing = shortageBySlot.get(s.start) ?? [];
+                return (
+                  <th
+                    key={s.start}
+                    style={{
+                      ...thStyle,
+                      background: missing.length > 0 ? "#fee2e2" : "var(--color-surface-2)",
+                      color: missing.length > 0 ? "var(--color-danger)" : "var(--color-text-muted)",
+                      fontWeight: missing.length > 0 ? 700 : 400,
+                      fontSize: 10,
+                    }}
+                    title={missing.length > 0 ? `不足: ${missing.join("・")}` : "配置OK"}
+                  >
+                    {missing.length > 0 ? `不足:${missing.join("")}` : ""}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -154,6 +228,15 @@ export default function SchedulePage() {
                   }
                   const a = assignMap.get(`${r.employeeId}-${s.start}`);
                   const color = a ? POSITION_COLORS[a.cartPosition.code] ?? "#f1f5f9" : "#ffffff";
+
+                  if (!isAdmin) {
+                    return (
+                      <td key={s.start} style={{ ...tdStyle, textAlign: "center", background: color }}>
+                        {a?.cartPosition.code ?? ""}
+                      </td>
+                    );
+                  }
+
                   return (
                     <td key={s.start} style={{ ...tdStyle, padding: 0 }}>
                       <select
@@ -162,7 +245,7 @@ export default function SchedulePage() {
                         style={{
                           width: 52, height: 30, background: color,
                           color: "var(--color-text)", border: "1px solid var(--color-border)",
-                          fontSize: 11, textAlign: "center",
+                          fontSize: 11, textAlign: "center", cursor: "pointer",
                         }}
                       >
                         <option value=""></option>
@@ -189,6 +272,10 @@ export default function SchedulePage() {
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ width: 12, height: 12, borderRadius: 3, background: "var(--color-surface-2)", border: "1px solid var(--color-border)", display: "inline-block" }} />
           勤務時間外（編集不可）
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 12, height: 12, borderRadius: 3, background: "#fee2e2", border: "1px solid var(--color-border)", display: "inline-block" }} />
+          人員不足（車A・車B・全のいずれかが未配置）
         </div>
       </div>
 

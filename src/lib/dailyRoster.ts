@@ -30,11 +30,11 @@ export async function buildDailyRosterView(workDate: Date): Promise<DailyRosterI
 
   const [todayEntries, prevEntries] = await Promise.all([
     prisma.monthRoster.findMany({
-      where: { workDate, status: "WORK" },
+      where: { workDate, status: "WORK", employee: { isActive: true } },
       include: { employee: true, shiftType: true },
     }),
     prisma.monthRoster.findMany({
-      where: { workDate: prevDate, status: "WORK" },
+      where: { workDate: prevDate, status: "WORK", employee: { isActive: true } },
       include: { employee: true, shiftType: true },
     }),
   ]);

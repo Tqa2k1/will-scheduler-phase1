@@ -24,13 +24,19 @@ export default async function DashboardPage() {
             ダッシュボード
           </h1>
           <p style={{ color: "var(--color-text-muted)", margin: "4px 0 0" }}>
-            ようこそ、{session.user.name} さん（{session.user.role === "ADMIN" ? "管理者" : "INC"}）
+            ようこそ、{session.user.name} さん（{session.user.role === "ADMIN" ? "管理者" : session.user.role === "EMPLOYEE" ? "従業員" : "INC"}）
           </p>
         </div>
         <nav style={{ display: "flex", gap: 16 }}>
           <Link href="/roster">月間勤務表</Link>
-          <Link href="/tasks">業務管理</Link>
-          <Link href="/employees">従業員管理</Link>
+          <Link href={`/schedule/${new Date().toISOString().slice(0, 10)}`}>日別スケジュール</Link>
+          {session.user.role === "ADMIN" && (
+            <>
+              <Link href="/tasks">業務管理</Link>
+              <Link href="/employees">従業員管理</Link>
+              <Link href="/users">アカウント管理</Link>
+            </>
+          )}
         </nav>
       </header>
 

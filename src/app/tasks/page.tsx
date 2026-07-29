@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 
 type Task = {
   id: string;
@@ -37,6 +38,7 @@ const ROLE_LABEL: Record<string, string> = {
 const ASSIGNABLE_ROLES = ["STAFF", "CONTRACT", "PARTTIME", "OJT"];
 
 export default function TasksPage() {
+  const { data: session, status } = useSession();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [priorities, setPriorities] = useState<RolePriority[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -52,8 +54,18 @@ export default function TasksPage() {
   }
 
   useEffect(() => {
-    load();
-  }, []);
+    if (status === "authenticated" && session?.user.role === "ADMIN") load();
+  }, [status, session]);
+
+  if (status === "loading") return null;
+  if (!session || session.user.role !== "ADMIN") {
+    return (
+      <div style={{ maxWidth: 600, margin: "80px auto", padding: 24, textAlign: "center" }}>
+        <p style={{ color: "var(--color-danger)" }}>このページを表示する権限がありません。</p>
+        <Link href="/dashboard">← ダッシュボードに戻る</Link>
+      </div>
+    );
+  }
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
 
@@ -64,6 +76,19 @@ export default function TasksPage() {
       body: JSON.stringify({ isActive: !task.isActive }),
     });
     load();
+  }
+
+  async function handleDeleteTask(task: Task) {
+    if (!confirm(`この業務「${task.name}」を削除してもよろしいですか？`)) return;
+    const res = await fetch(`/api/cart-positions/${task.id}`, { method: "DELETE" });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.deactivated) alert(data.message);
+      if (selectedTaskId === task.id) setSelectedTaskId(null);
+      load();
+    } else {
+      alert("削除に失敗しました。");
+    }
   }
 
   return (
@@ -104,8 +129,11 @@ export default function TasksPage() {
                   <button className="btn-secondary" onClick={() => setSelectedTaskId(t.id)} style={{ padding: "5px 10px", fontSize: 12, marginRight: 6 }}>
                     要件を管理
                   </button>
-                  <button className="btn-secondary" onClick={() => toggleActive(t)} style={{ padding: "5px 10px", fontSize: 12 }}>
+                  <button className="btn-secondary" onClick={() => toggleActive(t)} style={{ padding: "5px 10px", fontSize: 12, marginRight: 6 }}>
                     {t.isActive ? "停止する" : "再開する"}
+                  </button>
+                  <button className="btn-danger" onClick={() => handleDeleteTask(t)} style={{ padding: "5px 10px", fontSize: 12 }}>
+                    削除
                   </button>
                 </td>
               </tr>

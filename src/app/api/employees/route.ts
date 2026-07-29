@@ -11,6 +11,7 @@ const EmployeeInput = z.object({
   note: z.string().optional(),
   baseStartTime: z.string().optional(), // 基本勤務時間 開始 例:"08:00"
   baseEndTime: z.string().optional(),   // 基本勤務時間 終了 例:"17:00"
+  contactEmail: z.string().email().optional(),
 });
 
 // GET /api/employees — danh sách nhân viên (mọi user đã đăng nhập đều xem được)

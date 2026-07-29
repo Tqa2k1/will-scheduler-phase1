@@ -2,25 +2,29 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 
 type Employee = {
   id: string;
   fullName: string;
-  role: "INC" | "STAFF" | "OJT";
+  role: "INC" | "STAFF" | "CONTRACT" | "PARTTIME" | "OJT";
   isActive: boolean;
   baseStartTime: string | null;
   baseEndTime: string | null;
+  contactEmail: string | null;
 };
 
 const ROLE_LABEL: Record<string, string> = { STAFF: "社員", CONTRACT: "契約社員", PARTTIME: "バイト", INC: "INC", OJT: "OJT" };
 
 export default function EmployeesPage() {
+  const { data: session, status } = useSession();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [showInactive, setShowInactive] = useState(false);
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<"INC" | "STAFF" | "CONTRACT" | "PARTTIME" | "OJT">("STAFF");
   const [baseStartTime, setBaseStartTime] = useState("08:00");
   const [baseEndTime, setBaseEndTime] = useState("17:00");
+  const [contactEmail, setContactEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -32,8 +36,18 @@ export default function EmployeesPage() {
   }
 
   useEffect(() => {
-    load();
-  }, []);
+    if (status === "authenticated" && session?.user.role === "ADMIN") load();
+  }, [status, session]);
+
+  if (status === "loading") return null;
+  if (!session || session.user.role !== "ADMIN") {
+    return (
+      <div style={{ maxWidth: 600, margin: "80px auto", padding: 24, textAlign: "center" }}>
+        <p style={{ color: "var(--color-danger)" }}>このページを表示する権限がありません。</p>
+        <Link href="/dashboard">← ダッシュボードに戻る</Link>
+      </div>
+    );
+  }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -43,7 +57,7 @@ export default function EmployeesPage() {
     const res = await fetch("/api/employees", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fullName, role, baseStartTime, baseEndTime }),
+      body: JSON.stringify({ fullName, role, baseStartTime, baseEndTime, contactEmail: contactEmail || undefined }),
     });
 
     setLoading(false);
@@ -54,6 +68,7 @@ export default function EmployeesPage() {
     }
 
     setFullName("");
+    setContactEmail("");
     load();
   }
 
@@ -62,6 +77,15 @@ export default function EmployeesPage() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ [field]: value }),
+    });
+    load();
+  }
+
+  async function handleUpdateEmail(emp: Employee, value: string) {
+    await fetch(`/api/employees/${emp.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactEmail: value || null }),
     });
     load();
   }
@@ -129,6 +153,10 @@ export default function EmployeesPage() {
           <label className="label">基本勤務時間（終了）</label>
           <input className="input" type="time" value={baseEndTime} onChange={(e) => setBaseEndTime(e.target.value)} />
         </div>
+        <div style={{ minWidth: 180 }}>
+          <label className="label">連絡先メールアドレス（任意）</label>
+          <input className="input" type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="name@example.com" />
+        </div>
         <button className="btn" type="submit" disabled={loading}>
           {loading ? "追加中..." : "追加"}
         </button>
@@ -148,6 +176,7 @@ export default function EmployeesPage() {
               <th style={{ padding: "10px 12px" }}>氏名</th>
               <th style={{ padding: "10px 12px" }}>役割</th>
               <th style={{ padding: "10px 12px" }}>基本勤務時間</th>
+              <th style={{ padding: "10px 12px" }}>連絡先メール</th>
               <th style={{ padding: "10px 12px" }}>状態</th>
               <th style={{ padding: "10px 12px" }}>操作</th>
             </tr>
@@ -192,6 +221,17 @@ export default function EmployeesPage() {
                     disabled={!emp.isActive}
                   />
                 </td>
+                <td style={{ padding: "8px 12px" }}>
+                  <input
+                    className="input"
+                    type="email"
+                    value={emp.contactEmail ?? ""}
+                    onChange={(e) => handleUpdateEmail(emp, e.target.value)}
+                    placeholder="未登録"
+                    style={{ width: 170 }}
+                    disabled={!emp.isActive}
+                  />
+                </td>
                 <td style={{ padding: "8px 12px" }}>{emp.isActive ? "在籍中" : "退職"}</td>
                 <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
                   {editingId !== emp.id && emp.isActive && (
@@ -200,7 +240,7 @@ export default function EmployeesPage() {
                     </button>
                   )}
                   {emp.isActive ? (
-                    <button className="btn-secondary" onClick={() => handleDeactivate(emp)} style={{ padding: "5px 10px", fontSize: 12, color: "var(--color-danger)" }}>
+                    <button className="btn-danger" onClick={() => handleDeactivate(emp)} style={{ padding: "5px 10px", fontSize: 12 }}>
                       退職にする
                     </button>
                   ) : (
