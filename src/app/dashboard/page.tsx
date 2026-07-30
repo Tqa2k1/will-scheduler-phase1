@@ -13,8 +13,14 @@ export default async function DashboardPage() {
   today.setUTCHours(0, 0, 0, 0);
 
   const todayRoster = await prisma.monthRoster.count({
-    where: { workDate: today, status: "WORK" },
-  });
+where: {
+workDate: today,
+status: "WORK",
+employee: {
+isActive: true,
+},
+},
+});
 
   return (
     <div style={{ maxWidth: 960, margin: "0 auto", padding: "40px 24px" }}>
@@ -48,10 +54,6 @@ export default async function DashboardPage() {
         <div className="card">
           <p className="label">本日の出勤予定人数</p>
           <p style={{ fontSize: 32, fontWeight: 700, margin: 0 }}>{todayRoster}</p>
-        </div>
-        <div className="card">
-          <p className="label">人員不足スロット（Validator未実装）</p>
-          <p style={{ fontSize: 32, fontWeight: 700, margin: 0, color: "var(--color-text-muted)" }}>—</p>
         </div>
       </div>
     </div>

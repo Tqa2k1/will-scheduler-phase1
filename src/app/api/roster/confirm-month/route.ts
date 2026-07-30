@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
     if (result.ok) sent++;
     else {
       failed++;
+      console.log("MAIL ERROR:", result.reason);
       failures.push(`${emp.fullName}: ${result.reason}`);
     }
   }

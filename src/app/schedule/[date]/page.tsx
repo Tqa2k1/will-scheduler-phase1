@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 
-type CartPosition = { id: string; code: string; name: string; category: "CART" | "SPECIAL" };
+type CartPosition = { id: string; code: string; name: string; category: "CART" | "SPECIAL"; color: string | null };
 type RosterItem = {
   employeeId: string;
   employeeName: string;
@@ -107,7 +107,7 @@ export default function SchedulePage() {
       // その時間に誰も勤務していない（roster側でactiveな人が0人）場合は不足とみなさない
       const hasActiveStaff = roster.some((r) => {
         const idx = SLOTS.findIndex((slot) => slot.start === s.start);
-        return idx >= r.activeStartIdx && idx < r.activeEndIdx && r.employeeRole !== "INC";
+        return idx >= r.activeStartIdx && idx < r.activeEndIdx;
       });
       result.set(s.start, hasActiveStaff ? missing : []);
     }
@@ -227,7 +227,7 @@ export default function SchedulePage() {
                     return <td key={s.start} style={{ ...tdStyle, background: "var(--color-surface-2)" }} />;
                   }
                   const a = assignMap.get(`${r.employeeId}-${s.start}`);
-                  const color = a ? POSITION_COLORS[a.cartPosition.code] ?? "#f1f5f9" : "#ffffff";
+                  const color = a ? (a.cartPosition.color ?? POSITION_COLORS[a.cartPosition.code] ?? "#f1f5f9") : "#ffffff";
 
                   if (!isAdmin) {
                     return (
@@ -265,7 +265,7 @@ export default function SchedulePage() {
       <div style={{ display: "flex", gap: 16, marginTop: 16, flexWrap: "wrap", fontSize: 12 }}>
         {positions.map((p) => (
           <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 12, height: 12, borderRadius: 3, background: POSITION_COLORS[p.code] ?? "#f1f5f9", border: "1px solid var(--color-border)", display: "inline-block" }} />
+            <span style={{ width: 12, height: 12, borderRadius: 3, background: p.color ?? POSITION_COLORS[p.code] ?? "#f1f5f9", border: "1px solid var(--color-border)", display: "inline-block" }} />
             {p.code} — {p.name}
           </div>
         ))}

@@ -120,6 +120,7 @@ model CartPosition {
   description        String?                  // 業務の説明
   operatingStartTime String?                  // 業務の開始時間（例: "05:00"）
   operatingEndTime   String?                  // 業務の終了時間（例: "23:00"）
+  color              String?                  // 業務カラー（例: "#3b82f6"）。スケジュール画面の表示色に使用
 
   operatingHours  CartOperatingHours[]
   demandTemplates DemandTemplate[]

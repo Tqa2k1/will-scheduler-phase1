@@ -3,12 +3,14 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { buildDailyRosterView } from "@/lib/dailyRoster";
-import { buildAutoAssignPlan } from "@/lib/autoAssign";
+import { buildAutoAssignPlan, computeShortageCount } from "@/lib/autoAssign";
 import { z } from "zod";
 
 const InputSchema = z.object({ date: z.string() });
 
-// POST /api/schedule/auto-assign — 1日分のポジションを自動でローテーション割り当て（既存の割り当ては上書き。管理者のみ）
+// POST /api/schedule/auto-assign — 1日分の業務を自動配置（既存の割り当ては上書き。管理者のみ）
+// 制約ルール（休憩の重複禁止・2時間ブロック・A/B/全を1日1回ずつ・準備/片付けの固定など）は
+// src/lib/autoAssign.ts の buildAutoAssignPlan を参照。
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });
@@ -24,10 +26,13 @@ export async function POST(req: NextRequest) {
   const rosterItems = await buildDailyRosterView(workDate);
   const plan = buildAutoAssignPlan(rosterItems);
 
-  const positions = await prisma.cartPosition.findMany({ where: { code: { in: ["A", "B", "全", "BREAK"] } } });
+  const positions = await prisma.cartPosition.findMany({
+    where: { code: { in: ["A", "B", "全", "BREAK", "WHILL_PREP", "WHILL_CLEANUP"] } },
+  });
   const positionIdByCode = new Map(positions.map((p) => [p.code, p.id]));
 
-  const targetEmployeeIds = rosterItems.filter((r) => r.employeeRole !== "INC").map((r) => r.employeeId);
+  // INCを含む全スタッフが自動割り当ての対象（優先順位にINCが含まれるようになったため）
+  const targetEmployeeIds = rosterItems.map((r) => r.employeeId);
 
   const pad = (n: number) => n.toString().padStart(2, "0");
   const slotTime = (idx: number) => {
@@ -36,22 +41,29 @@ export async function POST(req: NextRequest) {
   };
 
   await prisma.$transaction(async (tx) => {
-    // 対象日・対象従業員の既存の割り当てを削除してから再生成する
     await tx.dailyAssignment.deleteMany({ where: { workDate, employeeId: { in: targetEmployeeIds } } });
 
-    for (const slotResult of plan) {
-      const slotStart = slotTime(slotResult.slotIndex);
-      const slotEnd = slotTime(slotResult.slotIndex + 1);
-      for (const a of slotResult.assignments) {
-        const cartPositionId = positionIdByCode.get(a.code);
-        if (!cartPositionId) continue;
-        await tx.dailyAssignment.create({
-          data: { employeeId: a.employeeId, workDate, slotStart, slotEnd, cartPositionId, source: "AUTO" },
-        });
-      }
+    for (const entry of plan) {
+      const cartPositionId = positionIdByCode.get(entry.code);
+      if (!cartPositionId) continue;
+      await tx.dailyAssignment.create({
+        data: {
+          employeeId: entry.employeeId,
+          workDate,
+          slotStart: slotTime(entry.slotIndex),
+          slotEnd: slotTime(entry.slotIndex + 1),
+          cartPositionId,
+          source: "AUTO",
+        },
+      });
     }
   });
 
-  const shortageCount = plan.reduce((sum, s) => sum + s.shortagePositions.length, 0);
+  const activeSlotIndexes = new Set<number>();
+  for (const r of rosterItems) {
+    for (let s = r.activeStartIdx; s < r.activeEndIdx; s++) activeSlotIndexes.add(s);
+  }
+  const shortageCount = computeShortageCount(plan, activeSlotIndexes);
+
   return NextResponse.json({ success: true, shortageCount });
 }

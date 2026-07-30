@@ -39,9 +39,10 @@ export async function sendScheduleConfirmedEmail(params: {
     });
 
     if (!res.ok) {
-      const text = await res.text();
-      return { ok: false, reason: `Resend API error: ${res.status} ${text}` };
-    }
+  const text = await res.text();
+  console.log("RESEND ERROR:", text);
+  return { ok: false, reason: `Resend API error: ${res.status} ${text}` };
+}
     return { ok: true };
   } catch (err) {
     return { ok: false, reason: String(err) };

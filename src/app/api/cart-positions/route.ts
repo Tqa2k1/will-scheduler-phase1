@@ -23,6 +23,7 @@ const TaskInput = z.object({
   description: z.string().optional(),
   operatingStartTime: z.string().optional(),
   operatingEndTime: z.string().optional(),
+  color: z.string().optional(),
 });
 
 // POST /api/cart-positions — 業務を作成（管理者のみ）

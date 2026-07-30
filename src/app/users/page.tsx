@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -75,14 +76,17 @@ export default function UsersPage() {
           <label className="label">メールアドレス</label>
           <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </div>
+
         <div style={{ minWidth: 140 }}>
           <label className="label">表示名</label>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
         </div>
+
         <div style={{ minWidth: 140 }}>
           <label className="label">初期パスワード</label>
           <input className="input" type="text" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
         </div>
+
         <div>
           <label className="label">権限</label>
           <select className="input" value={role} onChange={(e) => setRole(e.target.value as any)}>
@@ -90,16 +94,10 @@ export default function UsersPage() {
             <option value="ADMIN">管理者</option>
           </select>
         </div>
-        <div style={{ minWidth: 160 }}>
-          <label className="label">紐付ける従業員（任意）</label>
-          <select className="input" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
-            <option value="">なし</option>
-            {employees.map((emp) => (
-              <option key={emp.id} value={emp.id}>{emp.fullName}</option>
-            ))}
-          </select>
-        </div>
-        <button className="btn" type="submit" disabled={loading}>{loading ? "作成中..." : "アカウントを作成"}</button>
+
+        <button className="btn" type="submit" disabled={loading}>
+          {loading ? "作成中..." : "アカウントを作成"}
+        </button>
       </form>
 
       {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
@@ -111,7 +109,6 @@ export default function UsersPage() {
               <th style={{ padding: "10px 12px" }}>メールアドレス</th>
               <th style={{ padding: "10px 12px" }}>表示名</th>
               <th style={{ padding: "10px 12px" }}>権限</th>
-              <th style={{ padding: "10px 12px" }}>紐付け従業員</th>
             </tr>
           </thead>
           <tbody>
@@ -120,7 +117,6 @@ export default function UsersPage() {
                 <td style={{ padding: "8px 12px" }}>{u.email}</td>
                 <td style={{ padding: "8px 12px" }}>{u.name}</td>
                 <td style={{ padding: "8px 12px" }}>{ROLE_LABEL[u.role] ?? u.role}</td>
-                <td style={{ padding: "8px 12px" }}>{u.employee?.fullName ?? "—"}</td>
               </tr>
             ))}
           </tbody>

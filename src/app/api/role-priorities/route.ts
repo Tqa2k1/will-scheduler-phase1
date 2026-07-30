@@ -14,7 +14,7 @@ export async function GET() {
 }
 
 const UpdateInput = z.object({
-  items: z.array(z.object({ role: z.enum(["STAFF", "CONTRACT", "PARTTIME", "OJT"]), priorityOrder: z.number().int() })),
+  items: z.array(z.object({ role: z.enum(["INC", "STAFF", "CONTRACT", "PARTTIME", "OJT"]), priorityOrder: z.number().int() })),
 });
 
 // PATCH /api/role-priorities — 優先順位を一括更新（管理者のみ）

@@ -33,27 +33,29 @@ async function main() {
 
   // --- 業務 (Bước 1: A/B/全/BF + các trạng thái đặc biệt) ---
   const positions = [
-    { code: "A", name: "Aカート", category: "CART" as const, operatingStartTime: "05:00", operatingEndTime: "23:00" },
-    { code: "B", name: "Bカート", category: "CART" as const, operatingStartTime: "05:00", operatingEndTime: "23:00" },
-    { code: "全", name: "全カート", category: "CART" as const, operatingStartTime: "05:00", operatingEndTime: "23:00" },
-    { code: "BF", name: "BF", category: "SPECIAL" as const },
-    { code: "BREAK", name: "休憩 (Nghỉ giải lao)", category: "SPECIAL" as const },
-    { code: "MOVE", name: "移動 (Di chuyển)", category: "SPECIAL" as const },
-    { code: "WHILL_PREP", name: "WHILL準備 (Chuẩn bị xe)", category: "SPECIAL" as const },
-    { code: "WHILL_CLEANUP", name: "WHILL片付け (Thu dọn xe)", category: "SPECIAL" as const },
-    { code: "MTG", name: "Họp", category: "SPECIAL" as const },
+    { code: "A", name: "Aカート", category: "CART" as const, operatingStartTime: "05:00", operatingEndTime: "23:00", color: "#3b82f6" },
+    { code: "B", name: "Bカート", category: "CART" as const, operatingStartTime: "05:00", operatingEndTime: "23:00", color: "#a855f7" },
+    { code: "全", name: "全カート", category: "CART" as const, operatingStartTime: "05:00", operatingEndTime: "23:00", color: "#22c55e" },
+    { code: "BF", name: "BF", category: "SPECIAL" as const, color: "#f97316" },
+    { code: "BREAK", name: "休憩 (Nghỉ giải lao)", category: "SPECIAL" as const, color: "#94a3b8" },
+    { code: "MOVE", name: "移動 (Di chuyển)", category: "SPECIAL" as const, color: "#eab308" },
+    { code: "WHILL_PREP", name: "WHILL準備 (Chuẩn bị xe)", category: "SPECIAL" as const, color: "#06b6d4" },
+    { code: "WHILL_CLEANUP", name: "WHILL片付け (Thu dọn xe)", category: "SPECIAL" as const, color: "#06b6d4" },
+    { code: "MTG", name: "Họp", category: "SPECIAL" as const, color: "#ef4444" },
   ];
   for (const p of positions) {
+    // update: {} — 既存レコードの color 等はここで上書きしない（管理画面で設定した値をデプロイのたびに消さないため）
     await prisma.cartPosition.upsert({ where: { code: p.code }, update: {}, create: p });
   }
 
   // --- 優先順位（自動アサイン時の初期値。管理者が後からUIで変更可能） ---
   // INCは業務アサイン対象外（監督役割）のため優先順位の対象に含めない
-  const rolePriorities: { role: "STAFF" | "CONTRACT" | "PARTTIME" | "OJT"; priorityOrder: number }[] = [
-    { role: "STAFF", priorityOrder: 1 },
-    { role: "CONTRACT", priorityOrder: 2 },
-    { role: "PARTTIME", priorityOrder: 3 },
-    { role: "OJT", priorityOrder: 4 },
+  const rolePriorities: { role: "INC" | "STAFF" | "CONTRACT" | "PARTTIME" | "OJT"; priorityOrder: number }[] = [
+    { role: "INC", priorityOrder: 1 },
+    { role: "STAFF", priorityOrder: 2 },
+    { role: "CONTRACT", priorityOrder: 3 },
+    { role: "PARTTIME", priorityOrder: 4 },
+    { role: "OJT", priorityOrder: 5 },
   ];
   for (const rp of rolePriorities) {
     await prisma.rolePriority.upsert({

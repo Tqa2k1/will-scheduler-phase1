@@ -19,7 +19,6 @@ const ROLE_LABEL: Record<string, string> = { STAFF: "社員", CONTRACT: "契約�
 export default function EmployeesPage() {
   const { data: session, status } = useSession();
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [showInactive, setShowInactive] = useState(false);
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<"INC" | "STAFF" | "CONTRACT" | "PARTTIME" | "OJT">("STAFF");
   const [baseStartTime, setBaseStartTime] = useState("08:00");
@@ -106,22 +105,11 @@ export default function EmployeesPage() {
     load();
   }
 
-  async function handleDeactivate(emp: Employee) {
-    if (!confirm(`${emp.fullName} さんを退職（無効化）にしますか？\n過去の勤務データは保持されます。`)) return;
+  async function handleDelete(emp: Employee) {
+    if (!confirm(`${emp.fullName} さんを完全に削除しますか？\nこの操作は元に戻せません。`)) return;
     await fetch(`/api/employees/${emp.id}`, { method: "DELETE" });
     load();
   }
-
-  async function handleReactivate(emp: Employee) {
-    await fetch(`/api/employees/${emp.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive: true }),
-    });
-    load();
-  }
-
-  const visibleEmployees = employees.filter((e) => showInactive || e.isActive);
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 24px" }}>
@@ -164,11 +152,6 @@ export default function EmployeesPage() {
 
       {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
 
-      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--color-text-muted)", marginBottom: 8 }}>
-        <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
-        退職済みも表示する
-      </label>
-
       <div className="card" style={{ padding: 0 }}>
         <table style={{ width: "100%" }}>
           <thead>
@@ -182,8 +165,8 @@ export default function EmployeesPage() {
             </tr>
           </thead>
           <tbody>
-            {visibleEmployees.map((emp) => (
-              <tr key={emp.id} style={{ opacity: emp.isActive ? 1 : 0.5 }}>
+            {employees.filter((e) => e.isActive).map((emp) => (
+              <tr key={emp.id}>
                 <td style={{ padding: "8px 12px" }}>
                   {editingId === emp.id ? (
                     <div style={{ display: "flex", gap: 6 }}>
@@ -209,7 +192,6 @@ export default function EmployeesPage() {
                     value={emp.baseStartTime ?? ""}
                     onChange={(e) => handleUpdateTime(emp, "baseStartTime", e.target.value)}
                     style={{ width: 110 }}
-                    disabled={!emp.isActive}
                   />
                   〜
                   <input
@@ -218,7 +200,6 @@ export default function EmployeesPage() {
                     value={emp.baseEndTime ?? ""}
                     onChange={(e) => handleUpdateTime(emp, "baseEndTime", e.target.value)}
                     style={{ width: 110 }}
-                    disabled={!emp.isActive}
                   />
                 </td>
                 <td style={{ padding: "8px 12px" }}>
@@ -229,25 +210,18 @@ export default function EmployeesPage() {
                     onChange={(e) => handleUpdateEmail(emp, e.target.value)}
                     placeholder="未登録"
                     style={{ width: 170 }}
-                    disabled={!emp.isActive}
                   />
                 </td>
-                <td style={{ padding: "8px 12px" }}>{emp.isActive ? "在籍中" : "退職"}</td>
+                <td style={{ padding: "8px 12px" }}>在籍中</td>
                 <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
-                  {editingId !== emp.id && emp.isActive && (
+                  {editingId !== emp.id && (
                     <button className="btn-secondary" onClick={() => startEditName(emp)} style={{ padding: "5px 10px", marginRight: 6, fontSize: 12 }}>
                       名前変更
                     </button>
                   )}
-                  {emp.isActive ? (
-                    <button className="btn-danger" onClick={() => handleDeactivate(emp)} style={{ padding: "5px 10px", fontSize: 12 }}>
-                      退職にする
-                    </button>
-                  ) : (
-                    <button className="btn-secondary" onClick={() => handleReactivate(emp)} style={{ padding: "5px 10px", fontSize: 12 }}>
-                      復職させる
-                    </button>
-                  )}
+                  <button className="btn-danger" onClick={() => handleDelete(emp)} style={{ padding: "5px 10px", fontSize: 12 }}>
+                    削除
+                  </button>
                 </td>
               </tr>
             ))}
@@ -256,7 +230,7 @@ export default function EmployeesPage() {
       </div>
 
       <p style={{ color: "var(--color-text-muted)", fontSize: 13, marginTop: 12 }}>
-        「退職にする」は過去の勤務データを保持したまま一覧から外す操作です（完全削除ではありません）。
+        「削除」を押すと従業員を完全に削除します。
       </p>
     </div>
   );
