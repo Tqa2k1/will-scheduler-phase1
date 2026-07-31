@@ -30,6 +30,7 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           name: user.name,
           role: user.role,
+          employeeId: user.employeeId,
         };
       },
     }),
@@ -39,6 +40,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.role = (user as any).role;
         token.id = (user as any).id;
+        token.employeeId = (user as any).employeeId ?? null;
       }
       return token;
     },
@@ -46,6 +48,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         (session.user as any).role = token.role;
         (session.user as any).id = token.id;
+        (session.user as any).employeeId = token.employeeId ?? null;
       }
       return session;
     },

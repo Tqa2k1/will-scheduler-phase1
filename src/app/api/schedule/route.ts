@@ -6,7 +6,8 @@ import { buildDailyRosterView } from "@/lib/dailyRoster";
 import { z } from "zod";
 
 // GET /api/schedule?date=2026-07-01
-// その日の勤務者一覧（INC優先→開始時刻順、前日夜勤の引き継ぎ含む）+ ポジション割り当てを返す
+// 管理者: その日の全スタッフの勤務者一覧 + ポジション割り当てを返す（従来通り）。
+// 従業員(EMPLOYEE): 自分自身の行だけに絞り込んで返す（他の従業員のデータは含めない）。
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });
@@ -16,12 +17,22 @@ export async function GET(req: NextRequest) {
 
   const workDate = new Date(date);
 
-  const [rosterItems, assignments] = await Promise.all([
+  const [allRosterItems, allAssignments] = await Promise.all([
     buildDailyRosterView(workDate),
     prisma.dailyAssignment.findMany({ where: { workDate }, include: { cartPosition: true } }),
   ]);
 
-  return NextResponse.json({ rosterItems, assignments });
+  if (session.user.role === "EMPLOYEE") {
+    const myEmployeeId = session.user.employeeId;
+    if (!myEmployeeId) {
+      return NextResponse.json({ rosterItems: [], assignments: [], notLinked: true });
+    }
+    const rosterItems = allRosterItems.filter((r) => r.employeeId === myEmployeeId);
+    const assignments = allAssignments.filter((a) => a.employeeId === myEmployeeId);
+    return NextResponse.json({ rosterItems, assignments, notLinked: false });
+  }
+
+  return NextResponse.json({ rosterItems: allRosterItems, assignments: allAssignments, notLinked: false });
 }
 
 const AssignmentInput = z.object({
