@@ -139,7 +139,9 @@ export default function SchedulePage() {
       }
       load();
     } else {
-      alert("自動割り当てに失敗しました。");
+      const data = await res.json().catch(() => null);
+      const detail = data?.detail || data?.error || "";
+      alert(`自動割り当てに失敗しました。${detail ? `\n詳細: ${detail}` : ""}`);
     }
   }
 
