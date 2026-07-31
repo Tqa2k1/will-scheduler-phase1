@@ -68,6 +68,7 @@ export default function SchedulePage() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [positions, setPositions] = useState<CartPosition[]>([]);
   const [autoAssigning, setAutoAssigning] = useState(false);
+  const [notLinked, setNotLinked] = useState(false);
 
   async function load() {
     const [schedRes, posRes] = await Promise.all([
@@ -78,6 +79,7 @@ export default function SchedulePage() {
       const data = await schedRes.json();
       setRoster(data.rosterItems);
       setAssignments(data.assignments);
+      setNotLinked(!!data.notLinked);
     }
     if (posRes.ok) setPositions(await posRes.json());
   }
@@ -175,6 +177,14 @@ export default function SchedulePage() {
           <a className="btn-secondary" href={`/api/export/schedule-pdf?date=${date}`}>PDF出力</a>
         </div>
       </div>
+
+      {notLinked && (
+        <div className="card" style={{ marginBottom: 16, background: "#fffbeb", borderColor: "#fde68a" }}>
+          <p style={{ margin: 0, color: "var(--color-warn)" }}>
+            このアカウントにはまだ従業員情報が紐付けられていません。自分のスケジュールを表示するには、管理者にアカウントと従業員情報の紐付けを依頼してください。
+          </p>
+        </div>
+      )}
 
       <div className="card" style={{ overflowX: "auto", padding: 0 }}>
         <table style={{ width: "max-content" }}>

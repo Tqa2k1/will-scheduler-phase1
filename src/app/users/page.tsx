@@ -61,14 +61,24 @@ export default function UsersPage() {
     load();
   }
 
+  async function handleLinkChange(user: User, newEmployeeId: string) {
+    await fetch(`/api/users/${user.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ employeeId: newEmployeeId || null }),
+    });
+    load();
+  }
+
   return (
-    <div style={{ maxWidth: 800, margin: "0 auto", padding: "40px 24px" }}>
+    <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 24px" }}>
       <Link href="/dashboard" style={{ color: "var(--color-text-muted)", fontSize: 14 }}>
         ← ダッシュボードに戻る
       </Link>
       <h1 style={{ fontFamily: "var(--font-display)", fontSize: 24 }}>アカウント管理</h1>
       <p style={{ color: "var(--color-text-muted)", fontSize: 13, marginTop: -8 }}>
         従業員用アカウントを作成すると、そのアカウントは月間・日別スケジュールの閲覧のみ可能になります（編集・削除・従業員管理・業務管理は不可）。
+        自分のスケジュールを表示するには、下の表で必ず「紐付け従業員」を設定してください。
       </p>
 
       <form onSubmit={handleCreate} className="card" style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -95,6 +105,16 @@ export default function UsersPage() {
           </select>
         </div>
 
+        <div style={{ minWidth: 160 }}>
+          <label className="label">紐付ける従業員（任意）</label>
+          <select className="input" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
+            <option value="">なし</option>
+            {employees.map((emp) => (
+              <option key={emp.id} value={emp.id}>{emp.fullName}</option>
+            ))}
+          </select>
+        </div>
+
         <button className="btn" type="submit" disabled={loading}>
           {loading ? "作成中..." : "アカウントを作成"}
         </button>
@@ -109,6 +129,7 @@ export default function UsersPage() {
               <th style={{ padding: "10px 12px" }}>メールアドレス</th>
               <th style={{ padding: "10px 12px" }}>表示名</th>
               <th style={{ padding: "10px 12px" }}>権限</th>
+              <th style={{ padding: "10px 12px" }}>紐付け従業員</th>
             </tr>
           </thead>
           <tbody>
@@ -117,6 +138,23 @@ export default function UsersPage() {
                 <td style={{ padding: "8px 12px" }}>{u.email}</td>
                 <td style={{ padding: "8px 12px" }}>{u.name}</td>
                 <td style={{ padding: "8px 12px" }}>{ROLE_LABEL[u.role] ?? u.role}</td>
+                <td style={{ padding: "8px 12px" }}>
+                  {u.role === "EMPLOYEE" ? (
+                    <select
+                      className="input"
+                      value={u.employeeId ?? ""}
+                      onChange={(e) => handleLinkChange(u, e.target.value)}
+                      style={{ minWidth: 160 }}
+                    >
+                      <option value="">未設定（要設定）</option>
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.id}>{emp.fullName}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span style={{ color: "var(--color-text-muted)" }}>—</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
