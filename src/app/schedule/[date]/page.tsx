@@ -180,7 +180,7 @@ export default function SchedulePage() {
         <table style={{ width: "max-content" }}>
           <thead>
             <tr>
-              <th style={{ ...thStyle, position: "sticky", left: 0, zIndex: 2 }}>氏名</th>
+              <th style={{ ...thStyle, position: "sticky", left: 0, zIndex: 2,minWidth:"100px", backgroundColor: "white" }}>氏名</th>
               <th style={thStyle}>シフト</th>
               <th style={thStyle}>勤務時間</th>
               {SLOTS.map((s) => (
@@ -214,7 +214,8 @@ export default function SchedulePage() {
           <tbody>
             {roster.map((r) => (
               <tr key={r.employeeId}>
-                <td style={{ ...tdStyle, position: "sticky", left: 0, background: "var(--color-surface)", fontWeight: 600, whiteSpace: "nowrap" }}>
+                <td style={{ ...tdStyle, position: "sticky", left: 0,zIndex: 10, background: "var(--color-surface)",minWidth: "100px",
+  width: "100px", fontWeight: 600, whiteSpace: "nowrap" }}>
                   {r.employeeName}
                 </td>
                 <td style={{ ...tdStyle, color: "var(--color-text-muted)", fontSize: 11 }}>

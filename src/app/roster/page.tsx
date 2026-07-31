@@ -159,7 +159,7 @@ export default function RosterPage() {
         <table style={{ width: "max-content" }}>
           <thead>
             <tr>
-              <th style={{ ...thStyle, position: "sticky", left: 0, zIndex: 2 }}>氏名</th>
+              <th style={{ ...thStyle, position: "sticky", left: 0, zIndex: 30,minWidth:120,width:120,background:"var(--color-surface-2)" ,}}>氏名</th>
               {days.map((d) => {
                 const wd = new Date(year, month - 1, d).getDay();
                 const dateStr = `${year}-${pad2(month)}-${pad2(d)}`;
@@ -176,7 +176,7 @@ export default function RosterPage() {
           <tbody>
             {employees.map((emp) => (
               <tr key={emp.id}>
-                <td style={{ ...tdStyle, position: "sticky", left: 0, background: "var(--color-surface)", fontWeight: 600, whiteSpace: "nowrap" }}>
+                <td style={{ ...tdStyle, position: "sticky", left: 0,zIndex: 20,minWidth: 120,width: 120,background: "var(--color-surface)", fontWeight: 600, whiteSpace: "nowrap" }}>
                   {emp.fullName}
                 </td>
                 {days.map((d) => {
