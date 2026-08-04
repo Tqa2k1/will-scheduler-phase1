@@ -316,6 +316,8 @@ function PatternModal({
   const [anchorDate, setAnchorDate] = useState(defaultRangeStart);
   const [rangeStart, setRangeStart] = useState(defaultRangeStart);
   const [rangeEnd, setRangeEnd] = useState(defaultRangeEnd);
+  const [continueToYearEnd, setContinueToYearEnd] = useState(false);
+  const [overwriteExisting, setOverwriteExisting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
 
@@ -329,13 +331,28 @@ function PatternModal({
     const res = await fetch("/api/roster/apply-pattern", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ employeeIds: selectedIds, rotationPatternId: patternId, anchorDate, rangeStart, rangeEnd }),
+      body: JSON.stringify({
+        employeeIds: selectedIds,
+        rotationPatternId: patternId,
+        anchorDate,
+        rangeStart,
+        rangeEnd,
+        continueToYearEnd,
+        overwriteExisting,
+      }),
     });
     setLoading(false);
     if (res.ok) {
       const data = await res.json();
-      setResultMsg(`${data.updatedCount}件を更新しました（保護のためスキップ: ${data.skippedCount}件）`);
-      setTimeout(onApplied, 900);
+      let msg = `${data.updatedCount}件を更新しました（有休/調整休により保護: ${data.skippedLeaveCount}件）`;
+      if (data.skippedExistingMonthCount > 0) {
+        const detail = (data.skippedMonthsByEmployee ?? [])
+          .map((s: { employeeName: string; months: string[] }) => `${s.employeeName}: ${s.months.join("、")}`)
+          .join(" / ");
+        msg += `\n⚠ 既存データがあるためスキップした月があります（${data.skippedExistingMonthCount}日分）: ${detail}`;
+      }
+      setResultMsg(msg);
+      setTimeout(onApplied, 1400);
     } else {
       setResultMsg("適用に失敗しました。");
     }
@@ -388,7 +405,18 @@ function PatternModal({
           </div>
         </div>
 
-        {resultMsg && <p style={{ fontSize: 13, color: "var(--color-accent)" }}>{resultMsg}</p>}
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginBottom: 6 }}>
+          <input type="checkbox" checked={continueToYearEnd} onChange={(e) => setContinueToYearEnd(e.target.checked)} />
+          この後、同じ年の12月末まで自動的に継続して生成する（サイクルは途切れずそのまま続きます）
+        </label>
+        {continueToYearEnd && (
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginBottom: 12, marginLeft: 20, color: "var(--color-text-muted)" }}>
+            <input type="checkbox" checked={overwriteExisting} onChange={(e) => setOverwriteExisting(e.target.checked)} />
+            既にデータがある月も上書きする（通常はオフのまま推奨。オフの場合、既存データがある月はスキップされます）
+          </label>
+        )}
+
+        {resultMsg && <p style={{ fontSize: 13, color: "var(--color-accent)", whiteSpace: "pre-line" }}>{resultMsg}</p>}
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
           <button className="btn-secondary" onClick={onClose}>キャンセル</button>
