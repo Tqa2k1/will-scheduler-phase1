@@ -83,3 +83,27 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+// GET /api/schedule/auto-assign?month=2027-01
+// 月次自動割当てを実行する前に、その月に既にDailyAssignmentデータがあるか確認するための軽量エンドポイント。
+// 既存の自動割当てロジック本体（POST）は変更しない。
+export async function GET(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "自動割り当ては管理者のみ可能です" }, { status: 403 });
+  }
+
+  const month = req.nextUrl.searchParams.get("month"); // "2027-01"
+  if (!month) return NextResponse.json({ error: "month パラメータが必要です" }, { status: 400 });
+
+  const [year, mon] = month.split("-").map(Number);
+  const rangeStart = new Date(Date.UTC(year, mon - 1, 1));
+  const rangeEnd = new Date(Date.UTC(year, mon, 1));
+
+  const existingCount = await prisma.dailyAssignment.count({
+    where: { workDate: { gte: rangeStart, lt: rangeEnd } },
+  });
+
+  return NextResponse.json({ existingCount });
+}

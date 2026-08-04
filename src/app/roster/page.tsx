@@ -46,6 +46,7 @@ export default function RosterPage() {
 
   const [editCell, setEditCell] = useState<{ employeeId: string; day: number } | null>(null);
   const [patternModalOpen, setPatternModalOpen] = useState(false);
+  const [monthlyAutoAssignOpen, setMonthlyAutoAssignOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
   const monthStr = `${year}-${pad2(month)}`;
@@ -152,6 +153,11 @@ export default function RosterPage() {
             </button>
           )}
           <a className="btn-secondary" href={`/api/export/roster-excel?month=${monthStr}`}>Excel出力</a>
+          {isAdmin && (
+            <button className="btn-secondary" onClick={() => setMonthlyAutoAssignOpen(true)}>
+              月次自動割当て
+            </button>
+          )}
         </div>
       </div>
 
@@ -226,6 +232,14 @@ export default function RosterPage() {
             setPatternModalOpen(false);
             load();
           }}
+        />
+      )}
+
+      {monthlyAutoAssignOpen && (
+        <MonthlyAutoAssignModal
+          defaultYear={year}
+          defaultMonth={month}
+          onClose={() => setMonthlyAutoAssignOpen(false)}
         />
       )}
     </div>
@@ -441,3 +455,149 @@ const tdStyle: React.CSSProperties = {
   padding: "6px 8px",
   fontSize: 13,
 };
+
+// 月次自動割当て — 既存の1日単位のAuto Assign API（/api/schedule/auto-assign）を
+// 月内の日数分だけ順番に呼び出す。1リクエスト＝1日分なので、既存ロジックは一切変更せず、
+// タイムアウトのリスクも増やさない（バッチ処理として1日ずつ実行）。
+function MonthlyAutoAssignModal({
+  defaultYear, defaultMonth, onClose,
+}: {
+  defaultYear: number;
+  defaultMonth: number;
+  onClose: () => void;
+}) {
+  const [year, setYear] = useState(defaultYear);
+  const [month, setMonth] = useState(defaultMonth);
+  const [phase, setPhase] = useState<"config" | "running" | "done">("config");
+  const [currentDay, setCurrentDay] = useState(0);
+  const [totalShortage, setTotalShortage] = useState(0);
+  const [failedDays, setFailedDays] = useState<string[]>([]);
+  const [checking, setChecking] = useState(false);
+
+  const numDays = daysInMonth(year, month);
+
+  async function handleStart() {
+    setChecking(true);
+    const monthStr = `${year}-${pad2(month)}`;
+    const checkRes = await fetch(`/api/schedule/auto-assign?month=${monthStr}`);
+    const checkData = checkRes.ok ? await checkRes.json() : { existingCount: 0 };
+    setChecking(false);
+
+    if (checkData.existingCount > 0) {
+      const ok = confirm(
+        `${monthStr} には既に ${checkData.existingCount} 件の配置データがあります。\n` +
+        `続行すると、この月の既存データはすべて上書きされます。よろしいですか？`
+      );
+      if (!ok) return;
+    }
+
+    setPhase("running");
+    setCurrentDay(0);
+    setTotalShortage(0);
+    setFailedDays([]);
+
+    let shortageSum = 0;
+    const failures: string[] = [];
+
+    for (let d = 1; d <= numDays; d++) {
+      const dateStr = `${year}-${pad2(month)}-${pad2(d)}`;
+      try {
+        const res = await fetch("/api/schedule/auto-assign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date: dateStr }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          shortageSum += data.shortageCount ?? 0;
+        } else {
+          failures.push(dateStr);
+        }
+      } catch {
+        failures.push(dateStr);
+      }
+      setCurrentDay(d);
+    }
+
+    setTotalShortage(shortageSum);
+    setFailedDays(failures);
+    setPhase("done");
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={phase === "running" ? undefined : onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2 style={{ fontFamily: "var(--font-display)", fontSize: 18, marginTop: 0 }}>月次自動割当て</h2>
+
+        {phase === "config" && (
+          <>
+            <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
+              選択した月の全日について、既存の自動割当てロジック（業務要件・優先順位・勤務時間など）をそのまま使い、
+              1日ずつ順番に実行します。勤務表（4勤2休・3勤2休・シフト等）は変更しません。
+            </p>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              <div style={{ flex: 1 }}>
+                <label className="label">年</label>
+                <input className="input" type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label className="label">月</label>
+                <select className="input" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                    <option key={m} value={m}>{m}月</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn-secondary" onClick={onClose}>キャンセル</button>
+              <button className="btn" onClick={handleStart} disabled={checking}>
+                {checking ? "確認中..." : "実行する"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {phase === "running" && (
+          <>
+            <p style={{ fontSize: 14 }}>自動割当てを実行しています...</p>
+            <div style={{ background: "var(--color-surface-2)", borderRadius: 6, height: 10, overflow: "hidden", marginBottom: 8 }}>
+              <div
+                style={{
+                  width: `${(currentDay / numDays) * 100}%`,
+                  background: "var(--color-accent)",
+                  height: "100%",
+                  transition: "width 0.15s ease",
+                }}
+              />
+            </div>
+            <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
+              {currentDay} / {numDays} 日
+            </p>
+          </>
+        )}
+
+        {phase === "done" && (
+          <>
+            <p style={{ fontSize: 14 }}>
+              {year}年{month}月 の自動割当てが完了しました（{numDays}日分）。
+            </p>
+            {totalShortage > 0 && (
+              <p style={{ fontSize: 13, color: "var(--color-warn)" }}>
+                ⚠ 人員不足のコマが合計 {totalShortage} 件あります。日別スケジュールで赤色表示を確認してください。
+              </p>
+            )}
+            {failedDays.length > 0 && (
+              <p style={{ fontSize: 13, color: "var(--color-danger)" }}>
+                ⚠ 以下の日付は失敗しました: {failedDays.join("、")}
+              </p>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+              <button className="btn" onClick={onClose}>閉じる</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
