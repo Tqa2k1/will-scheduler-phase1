@@ -47,6 +47,7 @@ export default function RosterPage() {
   const [editCell, setEditCell] = useState<{ employeeId: string; day: number } | null>(null);
   const [patternModalOpen, setPatternModalOpen] = useState(false);
   const [monthlyAutoAssignOpen, setMonthlyAutoAssignOpen] = useState(false);
+  const [aiModalOpen, setAiModalOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
   const monthStr = `${year}-${pad2(month)}`;
@@ -158,6 +159,11 @@ export default function RosterPage() {
               月次自動割当て
             </button>
           )}
+          {isAdmin && (
+            <button className="btn-secondary" onClick={() => setAiModalOpen(true)}>
+              AI追加
+            </button>
+          )}
         </div>
       </div>
 
@@ -241,6 +247,10 @@ export default function RosterPage() {
           defaultMonth={month}
           onClose={() => setMonthlyAutoAssignOpen(false)}
         />
+      )}
+
+      {aiModalOpen && (
+        <AiAssistModal monthStr={monthStr} onClose={() => setAiModalOpen(false)} />
       )}
     </div>
   );
@@ -597,6 +607,57 @@ function MonthlyAutoAssignModal({
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// AI追加 — 現時点ではUIと拡張用の構造だけを用意する（実際のAI提案ロジックは未実装）。
+// 将来ここに「不足人員の自動提案」「シフト最適化提案」等を追加していく想定。
+function AiAssistModal({ monthStr, onClose }: { monthStr: string; onClose: () => void }) {
+  const [prompt, setPrompt] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [resultMsg, setResultMsg] = useState<string | null>(null);
+
+  async function handleSubmit() {
+    setLoading(true);
+    setResultMsg(null);
+    const res = await fetch("/api/roster/ai-assist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ month: monthStr, prompt }),
+    });
+    setLoading(false);
+    const data = await res.json().catch(() => null);
+    setResultMsg(data?.message ?? "エラーが発生しました。");
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2 style={{ fontFamily: "var(--font-display)", fontSize: 18, marginTop: 0 }}>AI追加（準備中）</h2>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
+          {monthStr} の勤務表について、AIによるシフト作成・人員不足の補完提案を行う機能です。
+          現在は土台のみで、実際の提案ロジックは今後追加予定です。
+        </p>
+
+        <label className="label">依頼内容（任意メモ・将来のAIへの指示欄）</label>
+        <textarea
+          className="input"
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          style={{ minHeight: 80, marginBottom: 12 }}
+          placeholder="例：不足しているシフトを提案してほしい"
+        />
+
+        {resultMsg && <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>{resultMsg}</p>}
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+          <button className="btn-secondary" onClick={onClose}>閉じる</button>
+          <button className="btn" onClick={handleSubmit} disabled={loading}>
+            {loading ? "送信中..." : "AIに依頼する"}
+          </button>
+        </div>
       </div>
     </div>
   );
