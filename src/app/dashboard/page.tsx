@@ -36,6 +36,7 @@ isActive: true,
         <nav style={{ display: "flex", gap: 16 }}>
           <Link href="/roster">月間勤務表</Link>
           <Link href={`/schedule/${new Date().toISOString().slice(0, 10)}`}>日別スケジュール</Link>
+          <Link href="/shift-requests">勤務希望申請</Link>
           {session.user.role === "ADMIN" && (
             <>
               <Link href="/tasks">業務管理</Link>

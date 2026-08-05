@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     const rosterItems = await buildDailyRosterView(workDate);
 
     const positions = await prisma.cartPosition.findMany({
-      where: { code: { in: ["A", "B", "全", "BREAK", "WHILL_PREP", "WHILL_CLEANUP"] } },
+      where: { code: { in: ["A", "B", "全", "BREAK", "WHILL_DEPARTURE_PREP", "WHILL_DEPARTURE_CLEANUP"] } },
       include: { requirements: { where: { isActive: true } } },
     });
     const positionIdByCode = new Map(positions.map((p) => [p.code, p.id]));

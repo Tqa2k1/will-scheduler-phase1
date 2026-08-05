@@ -105,12 +105,22 @@ export default function RosterPage() {
     overrideStartTime: string | null;
     overrideEndTime: string | null;
   }) {
-    await fetch("/api/roster", {
+    const res = await fetch("/api/roster", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     setEditCell(null);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.backfill && (data.backfill.backfilledSlots > 0 || data.backfill.unfilledSlots > 0)) {
+        const b = data.backfill;
+        let msg = "";
+        if (b.backfilledSlots > 0) msg += `${b.backfilledSlots}件の業務を優先順位に従って自動的に他の人に振り替えました。`;
+        if (b.unfilledSlots > 0) msg += `\n⚠ ${b.unfilledSlots}件は代わりが見つからず、人員不足のままです（日別スケジュールで赤色表示）。`;
+        alert(msg);
+      }
+    }
     load();
   }
 

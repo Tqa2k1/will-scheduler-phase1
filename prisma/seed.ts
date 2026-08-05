@@ -32,6 +32,19 @@ async function main() {
   }
 
   // --- 業務 (Bước 1: A/B/全/BF + các trạng thái đặc biệt) ---
+  // --- 業務 WHILL 旧データの削除（新しい5業務に置き換えるため） ---
+  // 関連するDailyAssignment/業務要件等も含めて安全に削除してから、新しい業務を作成する。
+  const oldWhillCodes = ["WHILL_PREP", "WHILL_CLEANUP"];
+  const oldWhillPositions = await prisma.cartPosition.findMany({ where: { code: { in: oldWhillCodes } } });
+  const oldWhillIds = oldWhillPositions.map((p) => p.id);
+  if (oldWhillIds.length > 0) {
+    await prisma.dailyAssignment.deleteMany({ where: { cartPositionId: { in: oldWhillIds } } });
+    await prisma.taskRequirement.deleteMany({ where: { cartPositionId: { in: oldWhillIds } } });
+    await prisma.cartOperatingHours.deleteMany({ where: { cartPositionId: { in: oldWhillIds } } });
+    await prisma.demandTemplate.deleteMany({ where: { cartPositionId: { in: oldWhillIds } } });
+    await prisma.cartPosition.deleteMany({ where: { id: { in: oldWhillIds } } });
+  }
+
   const positions = [
     { code: "A", name: "Aカート", category: "CART" as const, operatingStartTime: "05:00", operatingEndTime: "23:00", color: "#3b82f6" },
     { code: "B", name: "Bカート", category: "CART" as const, operatingStartTime: "05:00", operatingEndTime: "23:00", color: "#a855f7" },
@@ -39,8 +52,11 @@ async function main() {
     { code: "BF", name: "BF", category: "SPECIAL" as const, color: "#f97316" },
     { code: "BREAK", name: "休憩 (Nghỉ giải lao)", category: "SPECIAL" as const, color: "#94a3b8" },
     { code: "MOVE", name: "移動 (Di chuyển)", category: "SPECIAL" as const, color: "#eab308" },
-    { code: "WHILL_PREP", name: "WHILL準備 (Chuẩn bị xe)", category: "SPECIAL" as const, color: "#06b6d4" },
-    { code: "WHILL_CLEANUP", name: "WHILL片付け (Thu dọn xe)", category: "SPECIAL" as const, color: "#06b6d4" },
+    { code: "WHILL_ARRIVAL_PREP", name: "WHILL到着準備", category: "SPECIAL" as const, color: "#06b6d4" },
+    { code: "WHILL_ARRIVAL_CLEANUP", name: "WHILL到着片づけ", category: "SPECIAL" as const, color: "#0891b2" },
+    { code: "WHILL_DEPARTURE_PREP", name: "WHILL出発準備", category: "SPECIAL" as const, color: "#14b8a6" },
+    { code: "WHILL_DEPARTURE_CLEANUP", name: "WHILL出発片づけ", category: "SPECIAL" as const, color: "#0d9488" },
+    { code: "OFFICE", name: "事務時間", category: "SPECIAL" as const, color: "#64748b" },
     { code: "MTG", name: "Họp", category: "SPECIAL" as const, color: "#ef4444" },
   ];
   for (const p of positions) {
@@ -86,6 +102,33 @@ async function main() {
     },
   ];
   for (const rp of rotationPatterns) {
+    await prisma.rotationPattern.upsert({ where: { code: rp.code }, update: {}, create: rp });
+  }
+
+  // --- 正社員・契約社員用: 4日8-17 → 2休 → 4日13-22 → 2休 → 繰り返し ---
+  // どちらのシフトから開始するか選べるよう、2つのバリエーションを用意する（開始日はanchorDateで指定）。
+  // 早番=08:00-17:00, 遅番=13:00-22:00（既存のShiftTypeをそのまま使用）
+  const regularPatterns = [
+    {
+      code: "REGULAR_START_EARLY",
+      name: "正社員・契約社員（8-17開始）",
+      patternDefinition: {
+        cycleDays: 12,
+        pattern: ["WORK", "WORK", "WORK", "WORK", "OFF", "OFF", "WORK", "WORK", "WORK", "WORK", "OFF", "OFF"],
+        shiftCodes: ["早番", "早番", "早番", "早番", null, null, "遅番", "遅番", "遅番", "遅番", null, null],
+      },
+    },
+    {
+      code: "REGULAR_START_LATE",
+      name: "正社員・契約社員（13-22開始）",
+      patternDefinition: {
+        cycleDays: 12,
+        pattern: ["WORK", "WORK", "WORK", "WORK", "OFF", "OFF", "WORK", "WORK", "WORK", "WORK", "OFF", "OFF"],
+        shiftCodes: ["遅番", "遅番", "遅番", "遅番", null, null, "早番", "早番", "早番", "早番", null, null],
+      },
+    },
+  ];
+  for (const rp of regularPatterns) {
     await prisma.rotationPattern.upsert({ where: { code: rp.code }, update: {}, create: rp });
   }
 

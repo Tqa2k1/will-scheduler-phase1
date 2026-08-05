@@ -44,7 +44,18 @@ export async function POST(req: NextRequest) {
   const pattern = await prisma.rotationPattern.findUnique({ where: { id: rotationPatternId } });
   if (!pattern) return NextResponse.json({ error: "パターンが見つかりません" }, { status: 404 });
 
-  const def = pattern.patternDefinition as { cycleDays: number; pattern: ("WORK" | "OFF")[] };
+  const def = pattern.patternDefinition as {
+    cycleDays: number;
+    pattern: ("WORK" | "OFF")[];
+    shiftCodes?: (string | null)[]; // 出勤日ごとのShiftTypeコード（任意）
+  };
+
+  const shiftTypeIdByCode = new Map<string, string>();
+  if (def.shiftCodes) {
+    const shiftTypes = await prisma.shiftType.findMany();
+    for (const st of shiftTypes) shiftTypeIdByCode.set(st.code, st.id);
+  }
+
   const anchor = new Date(anchorDate + "T00:00:00Z");
   const start = new Date(rangeStart + "T00:00:00Z");
   const originalEnd = new Date(rangeEnd + "T00:00:00Z");
@@ -109,17 +120,21 @@ export async function POST(req: NextRequest) {
       const dayOffset = Math.floor((current.getTime() - anchor.getTime()) / MS_PER_DAY);
       const cycleIndex = ((dayOffset % def.cycleDays) + def.cycleDays) % def.cycleDays;
       const dayStatus = def.pattern[cycleIndex];
+      const shiftCode = def.shiftCodes?.[cycleIndex] ?? null;
+      const shiftTypeId = shiftCode ? shiftTypeIdByCode.get(shiftCode) ?? null : null;
 
       await prisma.monthRoster.upsert({
         where: { employeeId_workDate: { employeeId, workDate: current } },
         update: {
           status: dayStatus === "WORK" ? "WORK" : "OFF",
+          shiftTypeId: dayStatus === "WORK" ? shiftTypeId : null,
           updatedBy: session.user.email ?? undefined,
         },
         create: {
           employeeId,
           workDate: current,
           status: dayStatus === "WORK" ? "WORK" : "OFF",
+          shiftTypeId: dayStatus === "WORK" ? shiftTypeId : null,
           createdBy: session.user.email ?? undefined,
         },
       });

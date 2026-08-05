@@ -46,8 +46,11 @@ const POSITION_COLORS: Record<string, string> = {
   BF: "#ffedd5",
   BREAK: "#e5e7eb",
   MOVE: "#fef9c3",
-  WHILL_PREP: "#cffafe",
-  WHILL_CLEANUP: "#cffafe",
+  WHILL_ARRIVAL_PREP: "#cffafe",
+  WHILL_ARRIVAL_CLEANUP: "#a5f3fc",
+  WHILL_DEPARTURE_PREP: "#99f6e4",
+  WHILL_DEPARTURE_CLEANUP: "#5eead4",
+  OFFICE: "#e2e8f0",
   MTG: "#fee2e2",
 };
 

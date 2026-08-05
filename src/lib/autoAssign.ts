@@ -19,7 +19,7 @@ import { DailyRosterItem } from "@/lib/dailyRoster";
 export type AutoAssignEntry = {
   employeeId: string;
   slotIndex: number; // 0-23（4:00始まり）
-  code: "A" | "B" | "全" | "BREAK" | "WHILL_PREP" | "WHILL_CLEANUP";
+  code: "A" | "B" | "全" | "BREAK" | "WHILL_DEPARTURE_PREP" | "WHILL_DEPARTURE_CLEANUP";
 };
 
 const DUTY_CODES = ["A", "B", "全"] as const;
@@ -117,8 +117,10 @@ export function buildAutoAssignPlan(
       remainingSlots.splice(placedAt, 2);
     }
 
-    if (prepSlot !== null) results.push({ employeeId: person.employeeId, slotIndex: prepSlot, code: "WHILL_PREP" });
-    if (cleanupSlot !== null) results.push({ employeeId: person.employeeId, slotIndex: cleanupSlot, code: "WHILL_CLEANUP" });
+    // ⚠ 暫定: WHILL到着/出発それぞれ固定時間帯・人数のルール（別途確認予定）が未実装のため、
+    //   ひとまず出発準備・片づけを使い、各自のシフト開始・終了に割り当てる（従来のbookendロジックのまま）。
+    if (prepSlot !== null) results.push({ employeeId: person.employeeId, slotIndex: prepSlot, code: "WHILL_DEPARTURE_PREP" });
+    if (cleanupSlot !== null) results.push({ employeeId: person.employeeId, slotIndex: cleanupSlot, code: "WHILL_DEPARTURE_CLEANUP" });
     for (const b of chosenBreaks) results.push({ employeeId: person.employeeId, slotIndex: b, code: "BREAK" });
   });
 

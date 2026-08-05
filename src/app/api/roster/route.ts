@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { attemptBackfillOnRosterChange } from "@/lib/autoBackfill";
 import { z } from "zod";
 
 // GET /api/roster?month=2026-07 — 月間勤務表データ + 従業員一覧
@@ -67,5 +68,12 @@ export async function POST(req: NextRequest) {
     include: { shiftType: true },
   });
 
-  return NextResponse.json(entry);
+  // 出勤しない状態に変更された場合、その日に既に割り当てられていた業務（車A/車B/全等）が
+  // 欠員にならないよう、優先順位に従って自動的に代わりの人を探す（見つからなければ不足のまま）。
+  let backfill: { removedAssignments: number; backfilledSlots: number; unfilledSlots: number } | null = null;
+  if (entry.status !== "WORK") {
+    backfill = await attemptBackfillOnRosterChange(employeeId, date);
+  }
+
+  return NextResponse.json({ ...entry, backfill });
 }
