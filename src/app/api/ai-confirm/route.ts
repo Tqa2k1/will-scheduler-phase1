@@ -1,69 +1,72 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+
 export async function POST(req: NextRequest) {
+
   try {
+
     const body = await req.json();
 
     const {
       employeeName,
       date,
-      newStatus,
+      newStatus
     } = body;
 
 
     const employee = await prisma.employee.findFirst({
-      where: {
-        fullName: employeeName,
-      },
+      where:{
+        fullName: employeeName
+      }
     });
 
 
-    if (!employee) {
+    if(!employee){
       return NextResponse.json(
         {
-          error: "社員が見つかりません",
+          error:"社員が見つかりません"
         },
         {
-          status: 404,
+          status:404
         }
       );
     }
 
 
     await prisma.monthRoster.updateMany({
-      where: {
+
+      where:{
         employeeId: employee.id,
-        workDate: new Date(date),
+        workDate: new Date(date)
       },
 
-      data: {
-        status: newStatus,
+      data:{
+        status:newStatus,
+        startTime:null,
+        endTime:null
+      }
 
-        // 勤務時間をリセット
-        overrideStartTime: null,
-        overrideEndTime: null,
-        shiftTypeId: null,
-      },
     });
 
 
     return NextResponse.json({
-      success: true,
-      message: "勤務表を変更しました",
+      success:true,
+      message:"勤務表を変更しました"
     });
 
 
-  } catch (error) {
+  } catch(error){
 
     return NextResponse.json(
       {
-        error: String(error),
+        error:String(error)
       },
       {
-        status: 500,
+        status:500
       }
     );
 
   }
+
 }
