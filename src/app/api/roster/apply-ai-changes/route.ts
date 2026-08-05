@@ -53,9 +53,7 @@ export async function POST(req: NextRequest){
 
           // 有給・休みの場合勤務時間削除
           overrideStartTime:null,
-          overrideEndTime:null,
-          startTime:null,
-          endTime:null
+          overrideEndTime:null
 
         }
 
