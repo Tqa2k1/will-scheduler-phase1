@@ -260,7 +260,12 @@ export default function RosterPage() {
       )}
 
       {aiModalOpen && (
-        <AiAssistModal monthStr={monthStr} onClose={() => setAiModalOpen(false)} />
+        <AiAssistModal
+          monthStr={monthStr}
+          employees={employees}
+          onClose={() => setAiModalOpen(false)}
+          onApplied={load}
+        />
       )}
     </div>
   );
@@ -624,14 +629,32 @@ function MonthlyAutoAssignModal({
 
 // AI追加 — 現時点ではUIと拡張用の構造だけを用意する（実際のAI提案ロジックは未実装）。
 // 将来ここに「不足人員の自動提案」「シフト最適化提案」等を追加していく想定。
-function AiAssistModal({ monthStr, onClose }: { monthStr: string; onClose: () => void }) {
+type AiChange = { employeeName: string; date: string; newStatus: "WORK" | "OFF" | "PAID_LEAVE" | "ADJUST_LEAVE" };
+
+const AI_STATUS_LABEL: Record<string, string> = { WORK: "出勤", OFF: "公休", PAID_LEAVE: "有休", ADJUST_LEAVE: "調整休" };
+
+function AiAssistModal({
+  monthStr, employees, onClose, onApplied,
+}: {
+  monthStr: string;
+  employees: Employee[];
+  onClose: () => void;
+  onApplied: () => void;
+}) {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
+  const [changes, setChanges] = useState<AiChange[]>([]);
+  const [appliedKeys, setAppliedKeys] = useState<Set<string>>(new Set());
+  const [applyingKey, setApplyingKey] = useState<string | null>(null);
+
+  const employeeIdByName = new Map(employees.map((e) => [e.fullName, e.id]));
 
   async function handleSubmit() {
     setLoading(true);
     setResultMsg(null);
+    setChanges([]);
+    setAppliedKeys(new Set());
     const res = await fetch("/api/roster/ai-assist", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -640,18 +663,55 @@ function AiAssistModal({ monthStr, onClose }: { monthStr: string; onClose: () =>
     setLoading(false);
     const data = await res.json().catch(() => null);
     setResultMsg(data?.message ?? "エラーが発生しました。");
+    // バックエンドが提案してきた具体的な変更案（changes）を保持する。
+    // 実際にDBへ反映するのは、管理者が「適用」を押した時のみ（AIが勝手に変更することはない）。
+    setChanges(Array.isArray(data?.changes) ? data.changes : []);
+  }
+
+  async function applyChange(change: AiChange) {
+    const employeeId = employeeIdByName.get(change.employeeName);
+    if (!employeeId) {
+      alert(`従業員「${change.employeeName}」が見つかりません（名前が一致しないため適用できません）。`);
+      return;
+    }
+    const key = `${change.employeeName}-${change.date}`;
+    setApplyingKey(key);
+    // 既存の月間勤務表セル編集と同じAPI（/api/roster）をそのまま利用する
+    await fetch("/api/roster", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        employeeId,
+        workDate: change.date,
+        status: change.newStatus,
+        shiftTypeId: null,
+        overrideStartTime: null,
+        overrideEndTime: null,
+      }),
+    });
+    setApplyingKey(null);
+    setAppliedKeys((prev) => new Set(prev).add(key));
+    onApplied();
+  }
+
+  async function applyAll() {
+    for (const c of changes) {
+      const key = `${c.employeeName}-${c.date}`;
+      if (appliedKeys.has(key)) continue;
+      await applyChange(c);
+    }
   }
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ fontFamily: "var(--font-display)", fontSize: 18, marginTop: 0 }}>AI追加（準備中）</h2>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 560 }}>
+        <h2 style={{ fontFamily: "var(--font-display)", fontSize: 18, marginTop: 0 }}>AI追加</h2>
         <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
-          {monthStr} の勤務表について、AIによるシフト作成・人員不足の補完提案を行う機能です。
-          現在は土台のみで、実際の提案ロジックは今後追加予定です。
+          {monthStr} の勤務表について、AIが不足人員の補完・調整案を提案します。提案内容は一覧で確認し、
+          「適用」を押したものだけが実際に月間勤務表に反映されます（AIが自動でデータベースを変更することはありません）。
         </p>
 
-        <label className="label">依頼内容（任意メモ・将来のAIへの指示欄）</label>
+        <label className="label">依頼内容（任意）</label>
         <textarea
           className="input"
           value={prompt}
@@ -660,14 +720,58 @@ function AiAssistModal({ monthStr, onClose }: { monthStr: string; onClose: () =>
           placeholder="例：不足しているシフトを提案してほしい"
         />
 
-        {resultMsg && <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>{resultMsg}</p>}
-
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginBottom: 12 }}>
           <button className="btn-secondary" onClick={onClose}>閉じる</button>
           <button className="btn" onClick={handleSubmit} disabled={loading}>
             {loading ? "送信中..." : "AIに依頼する"}
           </button>
         </div>
+
+        {resultMsg && (
+          <p style={{ fontSize: 13, color: "var(--color-text-muted)", whiteSpace: "pre-line", marginBottom: 12 }}>
+            {resultMsg}
+          </p>
+        )}
+
+        {changes.length > 0 && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <label className="label" style={{ margin: 0 }}>提案された変更（{changes.length}件）</label>
+              <button className="btn-secondary" onClick={applyAll} style={{ padding: "4px 10px", fontSize: 12 }}>
+                すべて適用
+              </button>
+            </div>
+            <div style={{ maxHeight: 240, overflowY: "auto", border: "1px solid var(--color-border)", borderRadius: 6 }}>
+              {changes.map((c) => {
+                const key = `${c.employeeName}-${c.date}`;
+                const isApplied = appliedKeys.has(key);
+                const employeeExists = employeeIdByName.has(c.employeeName);
+                return (
+                  <div
+                    key={key}
+                    style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "8px 12px", borderBottom: "1px solid var(--color-border)", fontSize: 13,
+                    }}
+                  >
+                    <span>
+                      {c.employeeName} — {c.date} → <strong>{AI_STATUS_LABEL[c.newStatus] ?? c.newStatus}</strong>
+                      {!employeeExists && <span style={{ color: "var(--color-danger)" }}>（従業員が見つかりません）</span>}
+                    </span>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => applyChange(c)}
+                      disabled={isApplied || applyingKey === key || !employeeExists}
+                      style={{ padding: "3px 10px", fontSize: 12 }}
+                    >
+                      {isApplied ? "適用済み" : applyingKey === key ? "適用中..." : "適用"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

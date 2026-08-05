@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import Groq from "groq-sdk";
 
 const InputSchema = z.object({
   month: z.string(),
@@ -11,7 +11,9 @@ const InputSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+
   const session = await getServerSession(authOptions);
+
 
   if (!session) {
     return NextResponse.json(
@@ -19,6 +21,7 @@ export async function POST(req: NextRequest) {
       { status: 401 }
     );
   }
+
 
   if (session.user.role !== "ADMIN") {
     return NextResponse.json(
@@ -28,27 +31,39 @@ export async function POST(req: NextRequest) {
   }
 
 
+
   const body = await req.json();
 
   const parsed = InputSchema.safeParse(body);
 
+
   if (!parsed.success) {
     return NextResponse.json(
-      { error: parsed.error.flatten() },
-      { status: 400 }
+      {
+        error: parsed.error.flatten()
+      },
+      {
+        status:400
+      }
     );
   }
 
 
-  const { month, prompt } = parsed.data;
+
+  const {
+    month,
+    prompt
+  } = parsed.data;
 
 
-  const apiKey = process.env.GEMINI_API_KEY;
+
+  const apiKey = process.env.GROQ_API_KEY;
+
 
   if (!apiKey) {
     return NextResponse.json({
       message:
-        "AI機能を使うには環境変数 GEMINI_API_KEY を設定してください。",
+      "AI機能を使うには環境変数 GROQ_API_KEY を設定してください。"
     });
   }
 
@@ -56,26 +71,32 @@ export async function POST(req: NextRequest) {
 
   const [year, mon] = month.split("-").map(Number);
 
+
+
   const rangeStart = new Date(
     Date.UTC(year, mon - 1, 1)
   );
+
 
   const rangeEnd = new Date(
     Date.UTC(year, mon, 1)
   );
 
 
-  // 勤務表データ取得
+
   const entries = await prisma.monthRoster.findMany({
-    where: {
-      workDate: {
-        gte: rangeStart,
-        lt: rangeEnd,
-      },
+
+    where:{
+      workDate:{
+        gte:rangeStart,
+        lt:rangeEnd
+      }
     },
-    include: {
-      employee: true,
-    },
+
+    include:{
+      employee:true
+    }
+
   });
 
 
@@ -83,34 +104,40 @@ export async function POST(req: NextRequest) {
   const summaryByEmployee = new Map<
     string,
     {
-      name: string;
-      work: number;
-      off: number;
+      name:string;
+      work:number;
+      off:number;
     }
   >();
 
 
 
-  for (const e of entries) {
+  for(const e of entries){
 
     const key = e.employeeId;
 
 
-    if (!summaryByEmployee.has(key)) {
-      summaryByEmployee.set(key, {
-        name: e.employee.fullName,
-        work: 0,
-        off: 0,
-      });
+    if(!summaryByEmployee.has(key)){
+
+      summaryByEmployee.set(
+        key,
+        {
+          name:e.employee.fullName,
+          work:0,
+          off:0
+        }
+      );
+
     }
 
 
     const data = summaryByEmployee.get(key)!;
 
 
-    if (e.status === "WORK") {
+    if(e.status==="WORK"){
       data.work++;
-    } else {
+    }
+    else{
       data.off++;
     }
 
@@ -119,75 +146,183 @@ export async function POST(req: NextRequest) {
 
 
   const contextLines = [
-    ...summaryByEmployee.values(),
+    ...summaryByEmployee.values()
   ]
-    .map(
-      (s) =>
-        `${s.name}: 出勤${s.work}日 / 休み${s.off}日`
-    )
-    .join("\n");
+  .map(
+    s =>
+    `${s.name}: 出勤${s.work}日 / 休み${s.off}日`
+  )
+  .join("\n");
 
 
 
 
   try {
 
-    const genAI = new GoogleGenerativeAI(apiKey);
 
-
-    const model = genAI.getGenerativeModel({
-  model: "gemini-1.5-flash",
-});
+    const groq = new Groq({
+      apiKey
+    });
 
 
 
-    const result = await model.generateContent(`
+    const completion =
+    await groq.chat.completions.create({
 
-あなたはWHILLシフト管理アシスタントです。
+      model:"llama-3.1-8b-instant",
 
-目的:
-勤務表を確認し、管理者へ改善提案を行う。
+
+      response_format:{
+        type:"json_object"
+      },
+
+
+      messages:[
+
+        {
+          role:"system",
+
+          content:`
+
+あなたはWHILLシフト管理AIです。
+
+必ずJSONのみ返してください。
+説明文は禁止です。
+
+形式:
+
+{
+ "message":"説明",
+ "changes":[
+  {
+   "employeeName":"社員名",
+   "date":"YYYY-MM-DD",
+   "newStatus":"WORK|OFF|PAID_LEAVE|ADJUST_LEAVE"
+  }
+ ]
+}
+
 
 ルール:
-- データベースを変更しない
-- 提案のみ行う
-- 日本語で簡潔に回答する
 
+- 実在する社員名のみ使用
+- 日付は対象月内のみ
+- 勝手に社員を追加しない
+- データベース変更は禁止
+- 変更提案だけ返す
+
+`
+
+        },
+
+
+        {
+          role:"user",
+
+          content:`
 
 対象月:
 ${month}
 
 
 現在の勤務状況:
+
 ${contextLines || "データなし"}
 
 
 管理者からの依頼:
-${prompt || "全体的な過不足を確認してください。"}
 
-`);
+${prompt || "勤務状況を分析して改善案を提案してください"}
 
+`
 
+        }
 
-    const message = result.response.text();
+      ]
 
-
-    return NextResponse.json({
-      message,
     });
 
 
 
-  } catch (err) {
+
+    let rawMessage =
+      completion.choices[0]?.message?.content ?? "{}";
+
+
+
+    // ```json を削除
+    rawMessage =
+      rawMessage
+      .replace(/```json/g,"")
+      .replace(/```/g,"")
+      .trim();
+
+
+
+
+    let result:any;
+
+
+    try{
+
+      result = JSON.parse(rawMessage);
+
+    }
+    catch{
+
+      result={
+        message:rawMessage,
+        changes:[]
+      };
+
+    }
+
+
+
+    const changes =
+      Array.isArray(result.changes)
+      ?
+      result.changes.filter(
+        (c:any)=>
+          c.employeeName &&
+          c.date &&
+          c.newStatus
+      )
+      :
+      [];
+
+
+
 
     return NextResponse.json({
+
       message:
-        `AIへの問い合わせ中にエラーが発生しました: ${
-          err instanceof Error
-            ? err.message
-            : String(err)
-        }`,
+      result.message ??
+      "AI分析完了",
+
+
+      changes
+
     });
+
+
 
   }
+  catch(err){
+
+
+    return NextResponse.json({
+
+      message:
+      `AIへの問い合わせ中にエラーが発生しました: ${
+        err instanceof Error
+        ? err.message
+        : String(err)
+      }`
+
+    });
+
+
+  }
+
 }
