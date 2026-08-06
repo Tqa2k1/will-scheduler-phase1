@@ -1,24 +1,40 @@
 # TODO - WHILL Scheduler
 
 
+## ✅ 完了 (2026-08-06)
+
+### Auto Schedule Engine
+- [x] Viết lại src/lib/autoAssign.ts theo bộ quy tắc ưu tiên mới (A → B → 全 → WHILL → nghỉ → 事務時間)
+- [x] Hỗ trợ A 05:00-26:00
+- [x] Hỗ trợ B 06:00-24:00
+- [x] Hỗ trợ 全 05:00-25:00
+- [x] Thêm WHILL到着準備 / WHILL到着片づけ / WHILL出発準備 / WHILL出発片づけ (giờ + số người cố định)
+- [x] Thêm 事務時間 (chỉ dùng thời gian còn thừa, không cấp cho PARTTIME)
+- [x] Cải thiện logic nghỉ (3-5h đối với ca thường, 2h liên tục đối với 明け番, so le giữa các nhân viên)
+- [x] Rotation 1-3 giờ cho A/B/全 (không để 1 người giữ vị trí quá lâu)
+- [x] PARTTIME chỉ được xếp A/B/全 (không WHILL, không 事務時間)
+- [x] Cập nhật docs/AUTO_ASSIGN_RULES.md làm tài liệu tham chiếu chính cho thuật toán
+
 ## 🔴 High Priority (Quan trọng)
 
 ### Security
 - [ ] Kiểm tra tất cả API route có getServerSession
+- [ ] **Mới phát hiện**: `/api/ai-confirm` và `/api/roster/apply-ai-changes` hiện KHÔNG có
+      getServerSession / kiểm tra quyền ADMIN — cần xác nhận đây có phải lỗ hổng hay không
+      và bổ sung nếu cần (xem docs/API.md mục "Chưa xác nhận").
 - [ ] Giới hạn EMPLOYEE chỉ xem dữ liệu của bản thân
 - [ ] Đồng bộ quyền ADMIN / INC / EMPLOYEE
 - [ ] Kiểm tra API export Excel/PDF
 
-
-### Auto Schedule Engine
-- [ ] Viết lại src/lib/autoAssign.ts
-- [ ] Hỗ trợ A 05:00-26:00
-- [ ] Hỗ trợ B 06:00-24:00
-- [ ] Hỗ trợ 全 05:00-25:00
-- [ ] Thêm WHILL準備
-- [ ] Thêm WHILL片付け
-- [ ] Thêm 事務時間
-- [ ] Cải thiện logic nghỉ
+### Auto Schedule Engine (việc còn lại sau đợt cập nhật 2026-08-06)
+- [ ] Xác nhận với nghiệp vụ: `TaskRequirement` mặc định requiredCount=4 cho A/B/全 (trong
+      prisma/seed.ts) có đúng ý nghĩa "基本的に各時間1名配置" trong quy tắc mới hay không.
+- [ ] Cân nhắc đưa số người cần thiết của 4 sự kiện WHILL (hiện đang hardcode trong
+      `WHILL_EVENTS`) vào bảng `TaskRequirement` để admin chỉnh được từ màn hình /tasks.
+- [ ] `src/lib/autoBackfill.ts` (tự động thay người khi nghỉ đột xuất) chưa được cập nhật để
+      tuân theo thứ tự ưu tiên mới (A→B→全→WHILL→nghỉ→事務時間) — hiện chỉ backfill A/B/全.
+      Cần xác nhận có cần mở rộng backfill sang cả WHILL hay không.
+- [ ] Viết test tự động (hiện chưa có test nào trong project) cho `buildAutoAssignPlan`.
 
 
 ## 🟡 Medium Priority
@@ -27,7 +43,6 @@
 - [ ] Cải thiện giao diện bảng lịch
 - [ ] Sticky cột nhân viên
 - [ ] Kiểm tra hiển thị lịch ngày
-
 
 ### Notification
 - [ ] Kiểm tra email notification

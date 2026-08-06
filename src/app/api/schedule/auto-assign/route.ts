@@ -9,8 +9,9 @@ import { z } from "zod";
 const InputSchema = z.object({ date: z.string() });
 
 // POST /api/schedule/auto-assign — 1日分の業務を自動配置（既存の割り当ては上書き。管理者のみ）
-// 制約ルール（休憩の重複禁止・2時間ブロック・必要人数の上限・A/B/全を1日1回ずつ・準備/片付けの固定など）
-// は src/lib/autoAssign.ts の buildAutoAssignPlan を参照。
+// 優先順位（①業務A ②業務B ③業務全 ④WHILL関連業務 ⑤休憩 ⑥事務時間）とローテーション・
+// 休憩ルールの詳細は docs/AUTO_ASSIGN_RULES.md および src/lib/autoAssign.ts の
+// buildAutoAssignPlan を参照。
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -27,7 +28,21 @@ export async function POST(req: NextRequest) {
     const rosterItems = await buildDailyRosterView(workDate);
 
     const positions = await prisma.cartPosition.findMany({
-      where: { code: { in: ["A", "B", "全", "BREAK", "WHILL_DEPARTURE_PREP", "WHILL_DEPARTURE_CLEANUP"] } },
+      where: {
+        code: {
+          in: [
+            "A",
+            "B",
+            "全",
+            "BREAK",
+            "OFFICE",
+            "WHILL_ARRIVAL_PREP",
+            "WHILL_ARRIVAL_CLEANUP",
+            "WHILL_DEPARTURE_PREP",
+            "WHILL_DEPARTURE_CLEANUP",
+          ],
+        },
+      },
       include: { requirements: { where: { isActive: true } } },
     });
     const positionIdByCode = new Map(positions.map((p) => [p.code, p.id]));
