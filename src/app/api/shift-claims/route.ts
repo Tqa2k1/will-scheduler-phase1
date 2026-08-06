@@ -2,16 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { buildDailyRosterView } from "@/lib/dailyRoster";
-import { computeShortageCount } from "@/lib/autoAssign";
+import { getDailyStaffingStatus } from "@/lib/dailyStaffing";
 import { z } from "zod";
 
 const LOOKAHEAD_DAYS = 30;
 
 // GET /api/shift-claims
 // 管理者: 承認待ちの申請一覧を返す。
-// 従業員: 今後30日以内で人員不足（車A/車B/全のいずれかが未配置）の日のうち、
-//         自分がまだ出勤予定でなく、まだ申請していない日の一覧 + 自分の申請履歴を返す。
+// 従業員: 今後30日以内で、業務要件（1日の必要人数の合計）に対して出勤予定人数が
+//         足りていない日のうち、自分がまだ出勤予定でなく、まだ申請していない日の一覧
+//         （不足人数つき）+ 自分の申請履歴を返す。
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });
@@ -50,25 +50,7 @@ export async function GET() {
     const dateKey = d.toISOString().slice(0, 10);
     if (alreadyWorkingDates.has(dateKey) || alreadyRequestedDates.has(dateKey)) continue;
 
-    const [rosterItems, assignments] = await Promise.all([
-      buildDailyRosterView(d),
-      prisma.dailyAssignment.findMany({ where: { workDate: d }, include: { cartPosition: true } }),
-    ]);
-    if (assignments.length === 0) continue; // まだ自動割当てが実行されていない日は対象外
-
-    const activeSlotIndexes = new Set<number>();
-    for (const r of rosterItems) {
-      for (let s = r.activeStartIdx; s < r.activeEndIdx; s++) activeSlotIndexes.add(s);
-    }
-    const slotIndexOf = (slotStart: string) => {
-      const h = Number(slotStart.split(":")[0]);
-      return ((h - 4) % 24 + 24) % 24;
-    };
-    const shortage = computeShortageCount(
-      assignments.map((a) => ({ employeeId: a.employeeId, slotIndex: slotIndexOf(a.slotStart), code: a.cartPosition.code as any })),
-      activeSlotIndexes
-    );
-
+    const { shortage } = await getDailyStaffingStatus(d);
     if (shortage > 0) availableDates.push({ date: dateKey, shortageCount: shortage });
   }
 

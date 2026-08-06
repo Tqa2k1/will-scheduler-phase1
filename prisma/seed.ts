@@ -84,6 +84,19 @@ async function main() {
   // --- Rotation Pattern (4勤2休・3勤2休・5勤2休) ---
   // pattern配列は「出勤(WORK)/公休(OFF)」のサイクルのみを表す。勤務時間・シフトは別途、
   // 従業員の基本勤務時間 or ShiftType で決まる（resolveWorkTime を参照）。
+  // --- 業務要件のデフォルト（Aカート4名・Bカート4名・全カート4名 = 1日合計12名） ---
+  // 既に業務要件が設定されている場合は増やさない（管理者が/tasksで調整した値を上書きしないため）。
+  const cartCodesNeedingDefaultRequirement = ["A", "B", "全"];
+  for (const code of cartCodesNeedingDefaultRequirement) {
+    const position = await prisma.cartPosition.findUnique({ where: { code } });
+    if (!position) continue;
+    const existingRequirement = await prisma.taskRequirement.findFirst({ where: { cartPositionId: position.id } });
+    if (existingRequirement) continue;
+    await prisma.taskRequirement.create({
+      data: { cartPositionId: position.id, appliesToAllRoles: true, requiredCount: 4, note: "デフォルト設定" },
+    });
+  }
+
   const rotationPatterns = [
     {
       code: "4KIN2KYU",

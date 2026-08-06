@@ -6,8 +6,8 @@ import { buildDailyRosterView } from "@/lib/dailyRoster";
 import { z } from "zod";
 
 // GET /api/schedule?date=2026-07-01
-// 管理者: その日の全スタッフの勤務者一覧 + ポジション割り当てを返す（従来通り）。
-// 従業員(EMPLOYEE): 自分自身の行だけに絞り込んで返す（他の従業員のデータは含めない）。
+// 管理者・従業員(EMPLOYEE)ともに、その日の全スタッフの勤務者一覧 + ポジション割り当てを返す。
+// 閲覧内容は同じ（誰が・どの業務を・何時から何時まで）。書き込み(POST)は管理者のみに制限されている。
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });
@@ -17,22 +17,12 @@ export async function GET(req: NextRequest) {
 
   const workDate = new Date(date);
 
-  const [allRosterItems, allAssignments] = await Promise.all([
+  const [rosterItems, assignments] = await Promise.all([
     buildDailyRosterView(workDate),
     prisma.dailyAssignment.findMany({ where: { workDate }, include: { cartPosition: true } }),
   ]);
 
-  if (session.user.role === "EMPLOYEE") {
-    const myEmployeeId = session.user.employeeId;
-    if (!myEmployeeId) {
-      return NextResponse.json({ rosterItems: [], assignments: [], notLinked: true });
-    }
-    const rosterItems = allRosterItems.filter((r) => r.employeeId === myEmployeeId);
-    const assignments = allAssignments.filter((a) => a.employeeId === myEmployeeId);
-    return NextResponse.json({ rosterItems, assignments, notLinked: false });
-  }
-
-  return NextResponse.json({ rosterItems: allRosterItems, assignments: allAssignments, notLinked: false });
+  return NextResponse.json({ rosterItems, assignments });
 }
 
 const AssignmentInput = z.object({

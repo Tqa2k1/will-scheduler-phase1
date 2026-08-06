@@ -117,7 +117,7 @@ export default function ShiftRequestsPage() {
             )}
             {availableDates.map((d) => (
               <div key={d.date} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--color-border)" }}>
-                <span>{d.date}（不足: {d.shortageCount}件）</span>
+                <span>{d.date}（不足 {d.shortageCount}名）</span>
                 <button className="btn" onClick={() => handleClaim(d.date)} disabled={loading} style={{ padding: "5px 12px", fontSize: 12 }}>
                   申請
                 </button>

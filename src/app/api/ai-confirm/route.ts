@@ -43,8 +43,8 @@ export async function POST(req: NextRequest) {
 
       data:{
         status:newStatus,
-         overrideStartTime:null,
-         overrideEndTime:null
+        startTime:null,
+        endTime:null
       }
 
     });
