@@ -5,8 +5,12 @@ import { operatingIndex, hourOf } from "@/lib/timeSlots";
 // 1日分のスタッフ一覧を構築する（UI表示とExcel/PDF出力の両方から共通で使う）
 //
 // ルール:
-// - INC役割は常に一番上
-// - それ以外は「その日の営業日インデックス上の開始時刻」が早い順
+// - 表示順は role/yakuwari（従業員の役割）では決めない。role と表示順は分離する。
+//   ① 勤務開始時刻（営業日インデックス）が早い順
+//   ② 開始時刻が同じ場合は、勤務終了時刻が早い順
+//   ③ 開始・終了とも同じ場合は、氏名（かな順）による既存の固定順を使用
+//   （旧仕様では EmployeeRole === "INC" を常に先頭に固定していたが、これは
+//   　現場の「勤務時間の流れに沿った並び」という目的に反するため廃止した）
 // - 前日から続く夜勤（例: 22:00-08:00）は、当日シートでは 4:00〜シフト終了時刻 の部分だけを
 //   「引き継ぎ」として表示する（本来のシフトは前日シートの 22:00〜24:00超 部分に表示される）
 // - 各従業員は「実際に働いている時間帯」の情報 (activeStartIdx/activeEndIdx) を持つ。
@@ -98,11 +102,10 @@ export async function buildDailyRosterView(workDate: Date): Promise<DailyRosterI
     });
   }
 
+  // role/yakuwari による並び替えは行わない。勤務開始時刻→終了時刻→氏名（固定順）の順で並べる。
   items.sort((a, b) => {
-    const aInc = a.employeeRole === "INC" ? 0 : 1;
-    const bInc = b.employeeRole === "INC" ? 0 : 1;
-    if (aInc !== bInc) return aInc - bInc;
     if (a.activeStartIdx !== b.activeStartIdx) return a.activeStartIdx - b.activeStartIdx;
+    if (a.activeEndIdx !== b.activeEndIdx) return a.activeEndIdx - b.activeEndIdx;
     return a.employeeName.localeCompare(b.employeeName, "ja");
   });
 

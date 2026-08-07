@@ -1,116 +1,76 @@
 import { DailyRosterItem } from "@/lib/dailyRoster";
-import { operatingIndex } from "@/lib/timeSlots";
+import { hourOf } from "@/lib/timeSlots";
+import {
+  DutyCode,
+  WhillCode,
+  DUTY_PRIORITY,
+  DUTY_WINDOW,
+  WHILL_EVENTS,
+  PRODUCTIVE_CODES,
+} from "@/lib/dutySchedule";
 
 // ============================================================================
-// 自動スケジュール作成ロジック v2（2026-08 業務ルール改訂版）
+// 自動スケジュール作成ロジック v3（2026-08 業務ルール改訂 + 夜勤/優先順位バグ修正版）
 // ============================================================================
 //
-// 【優先順位】（2026-08 改訂で確定した最優先ルール）
-//   ① 業務A
-//   ② 業務B
-//   ③ 業務全
-//   ④ WHILL関連業務（準備・片づけ）
-//   ⑤ 休憩
-//   ⑥ 事務時間（OFFICE）
+// 【優先順位】① 業務A ② 業務B ③ 業務全 ④ WHILL関連業務 ⑤ 休憩 ⑥ 事務時間（OFFICE）
+// 「最優先」＝「必ず人数不足をゼロにする」ではない。人数・時間・休憩条件により不足が
+// 発生するのは許容する。重要なのは他業務よりA/B/全を優先して埋める「順序」であること。
+// WHILLや事務時間を確保するためにA/B/全の配置を削減しない。
 //
-// 「最優先」は「必ず人数不足をゼロにする」という意味ではない。スタッフ人数・勤務時間・
-// 休憩条件などにより不足が発生する場合はそれを許容する。重要なのは、他の業務より
-// A/B/全を優先して埋めるという「順序」である。WHILL業務や事務時間を確保するために
-// A/B/全の配置を削減することはしない。
+// 業務A/B/全・WHILLの稼働時間・必要人数の定義は src/lib/dutySchedule.ts に集約している
+// （日別スケジュール画面の「配置状況」表示もこのファイルの定義を共有する。二重管理によって
+// 表示と実際の割当てがズレるのを防ぐため）。
 //
-// 【本ファイルの設計方針】
-// 旧バージョンは「1人ずつ、休憩→prep/cleanup(bookend)→A/B/全(1回ずつ)」という
-// 人単位の逐次処理だったが、新ルールは「時間帯ごとに複数人が同じ業務を担当し、
-// 1〜3時間程度で担当を交代する」という時間帯単位のローテーションが必要になったため、
-// スロット（時間帯）を主軸にしたグローバルな逐次割当てに書き直した。
-//
-// 処理順序（優先順位をそのままアルゴリズムの実行順序に反映している）:
-//   1. 業務A/B/全 を時間帯ごとに埋める（1〜3時間で担当交代、必要人数の上限を尊重）
-//   2. WHILL関連業務（固定時刻・固定人数のイベント）を、A/B/全に使われていない人から補充
-//   3. 休憩を、A/B/全・WHILLの配置を壊さない範囲でスタッフごとに時間をずらして配置
-//   4. 事務時間（OFFICE）を、上記すべてを配置したあとに余った時間だけ埋める（パート除く）
-//
-// 【既存機能との互換性】
-// - buildAutoAssignPlan / computeShortageCount のシグネチャ、AutoAssignEntry / DemandByCode
-//   の形は維持し、呼び出し側（API route）を大きく変更しなくて済むようにしている。
-// - 既存の業務コード（"A" "B" "全" "BREAK" "WHILL_DEPARTURE_PREP" "WHILL_DEPARTURE_CLEANUP"）は
-//   そのまま使用。新規に必要な "WHILL_ARRIVAL_PREP" "WHILL_ARRIVAL_CLEANUP" "OFFICE" は
-//   prisma/seed.ts に既に CartPosition として定義済みのコードをそのまま使う（DB schema変更なし）。
-// - Prisma schema・API構造（POST /api/schedule/auto-assign の入出力）は変更していない。
+// v3での変更点（前バージョンからの追加修正）:
+// 1. 優先順位（RolePriority）を実際に反映するようにした（従来はロール優先度を無視していた）。
+// 2. 休憩の配置を「シートの見た目上のインデックス」ではなく「実際のシフト開始時刻からの
+//    経過時間」で計算するようにした。これにより、日付をまたぐ夜勤（明け番）で不自然に長い
+//    休憩や、当日シートと翌日シートの両方に休憩が二重に入るバグを修正している。
 
-export type DutyCode = "A" | "B" | "全";
-export type WhillCode =
-  | "WHILL_ARRIVAL_PREP"
-  | "WHILL_ARRIVAL_CLEANUP"
-  | "WHILL_DEPARTURE_PREP"
-  | "WHILL_DEPARTURE_CLEANUP";
-export type SpecialCode = "BREAK" | "OFFICE";
+// ---------------------------------------------------------------------------
+// 定数
+// ---------------------------------------------------------------------------
+const MAX_CONSECUTIVE_HOURS_ON_DUTY = 3; // 1〜3時間を目安に持ち場を交代する
+const BREAK_PREFERRED_START_OFFSET = 3; // 経過3〜5時間を優先的な休憩帯とする
+const BREAK_PREFERRED_END_OFFSET = 5;
 
-export type AutoAssignEntry = {
-  employeeId: string;
-  slotIndex: number; // 0-23（4:00始まり。src/lib/timeSlots.ts の営業日インデックスに準拠）
-  code: DutyCode | WhillCode | SpecialCode;
-};
-
-const DUTY_PRIORITY: DutyCode[] = ["A", "B", "全"];
-export const PRODUCTIVE_CODES = DUTY_PRIORITY;
-
-// 業務ごとの時間帯あたり必要人数（業務要件から算出。未設定の場合は1名を上限とする）
-export type DemandByCode = Partial<Record<DutyCode, number>>;
-
-// ログ出力（"なぜその配置になったか"を後から確認できるように）。
-// 通常は静かにしておき、環境変数 AUTO_ASSIGN_DEBUG=1 のときだけ詳細ログを出す。
 const DEBUG = process.env.AUTO_ASSIGN_DEBUG === "1";
 function log(...args: unknown[]) {
   if (DEBUG) console.log("[autoAssign]", ...args);
 }
 
-// ---------------------------------------------------------------------------
-// 業務A/B/全の稼働時間（営業日インデックス。endIdxは排他境界）
-// ---------------------------------------------------------------------------
-// 例: A は 5:00〜26:00（=翌2:00）稼働 → 21時間
-function windowFromClock(startHour: number, endHourExclusive: number): { startIdx: number; endIdx: number } {
-  const startIdx = operatingIndex(startHour % 24);
-  const duration = endHourExclusive - startHour; // 26 - 5 = 21 のように24時間超もそのまま使える
-  return { startIdx, endIdx: startIdx + duration };
-}
-
-const DUTY_WINDOW: Record<DutyCode, { startIdx: number; endIdx: number }> = {
-  A: windowFromClock(5, 26), // 05:00-26:00
-  B: windowFromClock(6, 24), // 06:00-24:00
-  全: windowFromClock(5, 25), // 05:00-25:00
+export type AutoAssignEntry = {
+  employeeId: string;
+  slotIndex: number; // 0-23（4:00始まりの営業日インデックス）
+  code: DutyCode | WhillCode | "BREAK" | "OFFICE";
 };
 
-// ---------------------------------------------------------------------------
-// WHILL関連業務（固定時刻・固定必要人数のイベント。要件通り時間・人数を固定値として定義）
-// ---------------------------------------------------------------------------
-const WHILL_EVENTS: { code: WhillCode; slotIndex: number; requiredCount: number }[] = [
-  { code: "WHILL_ARRIVAL_CLEANUP", slotIndex: operatingIndex(10), requiredCount: 1 }, // 10:00-11:00
-  { code: "WHILL_DEPARTURE_PREP", slotIndex: operatingIndex(11), requiredCount: 2 }, // 11:00-12:00
-  { code: "WHILL_DEPARTURE_CLEANUP", slotIndex: operatingIndex(18), requiredCount: 2 }, // 18:00-19:00
-  { code: "WHILL_ARRIVAL_PREP", slotIndex: operatingIndex(19), requiredCount: 1 }, // 19:00-20:00
-];
+export type DemandByCode = Partial<Record<DutyCode, number>>;
+// ロールごとの優先順位（小さいほど優先）。src/lib/autoBackfill.ts と同じ考え方・同じ
+// フォールバック値（未設定=999＝最低優先）を採用し、プロジェクト内で一貫させている。
+export type PriorityByRole = Partial<Record<string, number>>;
 
-// 1〜3時間を目安に担当を交代する（同一人物が同じ業務を4時間連続で担当するのは禁止）
-const MAX_CONSECUTIVE_HOURS_ON_DUTY = 3;
+export { PRODUCTIVE_CODES };
 
-// 通常勤務の休憩は「勤務開始から3〜5時間程度」を目安にする
-const BREAK_WINDOW_START_OFFSET = 3;
-const BREAK_WINDOW_END_OFFSET = 5;
+function priorityOf(priorityByRole: PriorityByRole, role: string): number {
+  return priorityByRole[role] ?? 999;
+}
 
 export function buildAutoAssignPlan(
   rosterItems: DailyRosterItem[],
-  demandByCode: DemandByCode = {}
+  demandByCode: DemandByCode = {},
+  priorityByRole: PriorityByRole = {}
 ): AutoAssignEntry[] {
   const people = rosterItems.filter((p) => p.activeEndIdx - p.activeStartIdx > 0);
-  // 安定した順序（同条件の場合の優先度をブレさせないため）。パートも含め、社員IDの昇順を基本にする。
+  // 安定した基準順（同条件のときの並びをブレさせないため）。表示順ではなくID順でよい。
   const stableOrder = [...people].sort((a, b) => a.employeeId.localeCompare(b.employeeId));
 
   const results: AutoAssignEntry[] = [];
   const capFor = (duty: DutyCode) => demandByCode[duty] ?? 1;
 
   // 各人・各スロットで何をしているか（二重登録防止）
-  const assignedSlot = new Map<string, Map<number, string>>(); // employeeId -> slotIndex -> code
+  const assignedSlot = new Map<string, Map<number, string>>();
   const getAssigned = (employeeId: string, slot: number) => assignedSlot.get(employeeId)?.get(slot);
   const setAssigned = (employeeId: string, slot: number, code: string) => {
     if (!assignedSlot.has(employeeId)) assignedSlot.set(employeeId, new Map());
@@ -119,14 +79,25 @@ export function buildAutoAssignPlan(
 
   const isActive = (p: DailyRosterItem, slot: number) => slot >= p.activeStartIdx && slot < p.activeEndIdx;
 
-  // 公平にローテーションするための「今日すでに割り当てた業務時間数」カウンタ
+  // 今日すでに割り当てた業務時間数（同一優先度内での負荷平準化に使う）
   const dutyHoursSoFar = new Map<string, number>();
   const bump = (employeeId: string) => dutyHoursSoFar.set(employeeId, (dutyHoursSoFar.get(employeeId) ?? 0) + 1);
   const hoursOf = (employeeId: string) => dutyHoursSoFar.get(employeeId) ?? 0;
 
-  // 直前スロットでその業務を担当していた人＆連続時間数（1〜3時間ローテーションの判定用）
+  // 直前スロットでその業務を担当していた人＆連続担当時間（1〜3時間ローテーション判定用）
   const lastDutyEmployee: Record<DutyCode, (string | null)[]> = { A: [], B: [], 全: [] };
   const lastDutyStreak: Record<DutyCode, number[]> = { A: [], B: [], 全: [] };
+
+  // 候補の並び順: ①ロール優先順位（RolePriorityの設定を必ず反映） ②今日の割当時間が少ない人を優先
+  // （同じ優先順位のスタッフ間で負荷を均等化するための二次基準）
+  function sortCandidates(list: DailyRosterItem[]): DailyRosterItem[] {
+    return [...list].sort((a, b) => {
+      const pa = priorityOf(priorityByRole, a.employeeRole);
+      const pb = priorityOf(priorityByRole, b.employeeRole);
+      if (pa !== pb) return pa - pb;
+      return hoursOf(a.employeeId) - hoursOf(b.employeeId);
+    });
+  }
 
   // ------------------------------------------------------------------
   // ステップ1〜2: 時間帯ごとに 業務A → 業務B → 業務全 → WHILL の順で埋める
@@ -134,39 +105,30 @@ export function buildAutoAssignPlan(
   for (let slot = 0; slot < 24; slot++) {
     for (const duty of DUTY_PRIORITY) {
       const window = DUTY_WINDOW[duty];
-      if (slot < window.startIdx || slot >= window.endIdx) continue; // この業務の稼働時間外
+      if (slot < window.startIdx || slot >= window.endIdx) continue; // 稼働時間外
 
       const cap = capFor(duty);
       const continuing = lastDutyEmployee[duty];
       const streak = lastDutyStreak[duty];
-
       const chosenThisSlot: string[] = [];
 
       for (let unit = 0; unit < cap; unit++) {
-        // 1) まず「直前スロットの担当者を継続」できるか確認する（1〜3時間ローテーションの範囲内なら継続）
         const prevEmployee = continuing[unit] ?? null;
         const prevStreak = streak[unit] ?? 0;
         let candidate: DailyRosterItem | null = null;
 
-        if (
-          prevEmployee &&
-          prevStreak < MAX_CONSECUTIVE_HOURS_ON_DUTY &&
-          !chosenThisSlot.includes(prevEmployee)
-        ) {
+        // 1) 直前スロットの担当者を継続できるか（1〜3時間ローテーションの範囲内なら継続）
+        if (prevEmployee && prevStreak < MAX_CONSECUTIVE_HOURS_ON_DUTY && !chosenThisSlot.includes(prevEmployee)) {
           const p = stableOrder.find((x) => x.employeeId === prevEmployee) ?? null;
-          if (p && isActive(p, slot) && !getAssigned(p.employeeId, slot)) {
-            candidate = p;
-          }
+          if (p && isActive(p, slot) && !getAssigned(p.employeeId, slot)) candidate = p;
         }
 
-        // 2) 継続できなければ、稼働中かつ未割当の人の中から「今日の業務時間が最も少ない人」を選ぶ
-        //    （負荷を均等化しつつ、自動的に1〜3時間での交代を発生させる）
+        // 2) 継続できなければ、ロール優先順位→負荷の少なさの順で新しい担当者を選ぶ
         if (!candidate) {
           const available = stableOrder.filter(
             (p) => isActive(p, slot) && !getAssigned(p.employeeId, slot) && !chosenThisSlot.includes(p.employeeId)
           );
-          available.sort((a, b) => hoursOf(a.employeeId) - hoursOf(b.employeeId));
-          candidate = available[0] ?? null;
+          candidate = sortCandidates(available)[0] ?? null;
         }
 
         if (!candidate) {
@@ -186,25 +148,17 @@ export function buildAutoAssignPlan(
       }
     }
 
-    // WHILL関連業務（この時間帯に該当するイベントのみ）
-    // A/B/全に既に使われている人は対象外（優先順位上、業務A/B/全を削らないため）。
-    // パートスタッフはWHILL業務に配置禁止。
+    // WHILL関連業務（この時間帯に該当するイベントのみ）。A/B/全に使われていない人・
+    // パート以外の人から、ロール優先順位→負荷の少なさの順で選ぶ。
     for (const event of WHILL_EVENTS) {
       if (event.slotIndex !== slot) continue;
 
       const candidates = stableOrder.filter(
-        (p) =>
-          isActive(p, slot) &&
-          !getAssigned(p.employeeId, slot) &&
-          p.employeeRole !== "PARTTIME"
+        (p) => isActive(p, slot) && !getAssigned(p.employeeId, slot) && p.employeeRole !== "PARTTIME"
       );
-      candidates.sort((a, b) => hoursOf(a.employeeId) - hoursOf(b.employeeId));
-
-      const picked = candidates.slice(0, event.requiredCount);
+      const picked = sortCandidates(candidates).slice(0, event.requiredCount);
       if (picked.length < event.requiredCount) {
-        log(
-          `slot=${slot} whill=${event.code}: 必要人数 ${event.requiredCount} に対して ${picked.length} 名しか確保できません`
-        );
+        log(`slot=${slot} whill=${event.code}: 必要人数${event.requiredCount}に対し${picked.length}名しか確保できません`);
       }
       for (const p of picked) {
         setAssigned(p.employeeId, slot, event.code);
@@ -217,71 +171,94 @@ export function buildAutoAssignPlan(
   // ------------------------------------------------------------------
   // ステップ3: 休憩
   // ------------------------------------------------------------------
-  // - 休憩を設定する場合でも業務A/B/全の運営を優先する＝既にA/B/全やWHILLで埋まっている
-  //   スロットには休憩を入れない（空いているスロットのみを対象にする）。
-  // - 全員を同時に休憩へ入れない（breakOccupiedSlotsで時間をずらす）。
-  // - 明け番（前日22:00開始の夜勤引き継ぎ）は2時間連続休憩。ただし2時間目は他スタッフの
-  //   休憩と重複してよい（もともとの制約ルールを踏襲）。
-  // - 通常勤務は勤務開始から3〜5時間程度を目安に1時間休憩を配置する。
+  // 「実際のシフト開始時刻からの経過時間」を基準に休憩位置を決める（シート上の見た目の
+  // インデックスでは判断しない）。これにより:
+  //   - 勤務開始直後・終了直前に休憩が入ることを防ぐ
+  //   - 日付をまたぐ夜勤で、シート境界（4:00）のせいで不自然な休憩時間になることを防ぐ
+  //   - 夜勤が「当日シート（前半）」と「翌日シート（後半＝引き継ぎ）」に分かれて表示される
+  //     際に、休憩が二重に（両方のシートに）入ってしまうことを防ぐ
+  //
+  // 前提となる仕組み: buildDailyRosterView() は日をまたぐ夜勤を2つのシート（前日分・翌日分）
+  // に分けて返す。この関数は「その日のシート」単位で呼ばれるため、1回の呼び出しでは
+  // シフトの前半または後半どちらか一方の断片(fragment)しか見えない。そこで、
+  // 「このシートに来る前に、シフト開始から何時間経過していたか」(hoursElapsedBeforeSheet)
+  // を求め、断片内の各スロットを「シフト開始からの経過時間」に変換してから休憩位置を判定する。
+  // 休憩が該当する経過時間帯が今回の断片に含まれていなければ何もしない
+  // （＝もう片方の断片側の実行で正しく配置される。結果として二重休憩にならない）。
   const breakOccupiedSlots = new Set<number>();
 
   for (const person of stableOrder) {
-    const start = person.activeStartIdx;
-    const end = person.activeEndIdx;
-    const total = end - start;
-    if (total < 4) continue; // 4時間未満は休憩不要（既存ルールを踏襲）
+    if (!person.resolvedStart || !person.resolvedEnd) continue;
+    const startHour = hourOf(person.resolvedStart);
+    const endHour = hourOf(person.resolvedEnd);
+    const totalShiftHours = ((endHour - startHour + 24) % 24) || 24; // 実際のシフト全体の長さ（両断片合算）
+    if (totalShiftHours < 4) continue; // 4時間未満は休憩不要
 
-    const isNightShift = person.isCarryOver || person.resolvedStart === "22:00";
+    // このシート（断片）に入る前に、シフト開始から何時間経過していたか
+    const hoursElapsedBeforeSheet = person.isCarryOver ? (4 - startHour + 24) % 24 : 0;
+    const elapsedAtSlotStart = (slot: number) => hoursElapsedBeforeSheet + (slot - person.activeStartIdx);
+
+    const isNightShift = person.shiftTypeCode === "明番" || startHour === 22;
     const breakHoursNeeded = isNightShift ? 2 : 1;
 
-    // 候補スロット: 空いている（他業務が入っていない）スロットのみ
-    const freeSlots: number[] = [];
-    for (let s = start; s < end; s++) {
-      if (!getAssigned(person.employeeId, s)) freeSlots.push(s);
-    }
-    if (freeSlots.length === 0) {
-      log(`employee=${person.employeeId}: 休憩を入れる空きスロットがありません（業務優先のため許容）`);
+    // 「勤務開始直後」「勤務終了直前」を除いた許容範囲（シフト全体基準）
+    const acceptableStart = 1;
+    const acceptableEnd = totalShiftHours - 1; // 排他境界
+    if (acceptableEnd <= acceptableStart) {
+      log(`employee=${person.employeeId}: シフトが短く休憩の許容範囲が確保できません`);
       continue;
     }
 
-    if (isNightShift) {
-      // 2時間連続の空きスロットを、他スタッフの休憩とできるだけ重ならない位置から探す
-      const freeSet = new Set(freeSlots);
-      const pairCandidates: number[] = [];
-      for (const s of freeSlots) {
-        if (freeSet.has(s + 1)) pairCandidates.push(s);
-      }
-      // 他の休憩と重ならない開始スロットを優先。無ければ許容（2時間目は重複可という既存ルールに準拠）
-      pairCandidates.sort((a, b) => {
+    // 空いている（他業務が入っていない）このシート内のスロットのうち、
+    // 「シフト全体で見て許容範囲内」に該当するものだけを対象にする
+    const candidateSlots: number[] = [];
+    for (let s = person.activeStartIdx; s < person.activeEndIdx; s++) {
+      if (getAssigned(person.employeeId, s)) continue;
+      const elapsed = elapsedAtSlotStart(s);
+      if (elapsed < acceptableStart || elapsed >= acceptableEnd) continue;
+      candidateSlots.push(s);
+    }
+    if (candidateSlots.length === 0) continue; // このシートの断片には該当する時間帯がない（正常。他方の断片で処理される）
+
+    const preferred = candidateSlots.filter((s) => {
+      const elapsed = elapsedAtSlotStart(s);
+      return elapsed >= BREAK_PREFERRED_START_OFFSET && elapsed < BREAK_PREFERRED_END_OFFSET;
+    });
+    const pool = preferred.length > 0 ? preferred : candidateSlots;
+
+    if (breakHoursNeeded === 2) {
+      // 2時間連続で空いているペアを、経過3〜5時間帯に近く・他スタッフの休憩と
+      // 重ならない位置から優先して探す
+      const poolSet = new Set(candidateSlots); // 連続判定は許容範囲全体で行う（優先帯はソートで反映）
+      const pairStarts = pool.filter((s) => poolSet.has(s + 1) && !getAssigned(person.employeeId, s + 1));
+      pairStarts.sort((a, b) => {
         const aOverlap = breakOccupiedSlots.has(a) ? 1 : 0;
         const bOverlap = breakOccupiedSlots.has(b) ? 1 : 0;
         if (aOverlap !== bOverlap) return aOverlap - bOverlap;
-        // 中間に近いスロットを優先
-        const center = start + total / 2;
-        return Math.abs(a - center) - Math.abs(b - center);
+        return (
+          Math.abs(elapsedAtSlotStart(a) - BREAK_PREFERRED_START_OFFSET) -
+          Math.abs(elapsedAtSlotStart(b) - BREAK_PREFERRED_START_OFFSET)
+        );
       });
-      const chosenStart = pairCandidates[0];
+      const chosenStart = pairStarts[0];
       if (chosenStart === undefined) {
-        log(`employee=${person.employeeId}: 明け番の2時間連続休憩を確保できません（1時間のみ許容）`);
-        const single = freeSlots[0];
+        // 2時間連続が確保できない場合は1時間のみで妥協する（旧仕様を踏襲）
+        const single = pool[0];
         setAssigned(person.employeeId, single, "BREAK");
         results.push({ employeeId: person.employeeId, slotIndex: single, code: "BREAK" });
         breakOccupiedSlots.add(single);
+        log(`employee=${person.employeeId}: 明け番の2時間連続休憩を確保できず1時間のみ配置`);
       } else {
         setAssigned(person.employeeId, chosenStart, "BREAK");
         setAssigned(person.employeeId, chosenStart + 1, "BREAK");
         results.push({ employeeId: person.employeeId, slotIndex: chosenStart, code: "BREAK" });
         results.push({ employeeId: person.employeeId, slotIndex: chosenStart + 1, code: "BREAK" });
-        breakOccupiedSlots.add(chosenStart); // 1時間目のみ「他スタッフと重複NG」対象にする
+        breakOccupiedSlots.add(chosenStart);
       }
       continue;
     }
 
-    // 通常勤務: 開始から3〜5時間を目安に、他スタッフの休憩と重ならないスロットを優先して選ぶ
-    const preferredWindow = freeSlots.filter(
-      (s) => s >= start + BREAK_WINDOW_START_OFFSET && s <= start + BREAK_WINDOW_END_OFFSET
-    );
-    const pool = preferredWindow.length > 0 ? preferredWindow : freeSlots;
+    // 通常勤務: 1時間休憩。他スタッフの休憩と重ならない位置を優先
     const sorted = [...pool].sort((a, b) => {
       const aOverlap = breakOccupiedSlots.has(a) ? 1 : 0;
       const bOverlap = breakOccupiedSlots.has(b) ? 1 : 0;
@@ -289,12 +266,10 @@ export function buildAutoAssignPlan(
       return a - b;
     });
     const chosen = sorted[0];
-    for (let i = 0; i < breakHoursNeeded && chosen !== undefined; i++) {
-      const slot = chosen + i;
-      if (slot >= end || getAssigned(person.employeeId, slot)) break;
-      setAssigned(person.employeeId, slot, "BREAK");
-      results.push({ employeeId: person.employeeId, slotIndex: slot, code: "BREAK" });
-      breakOccupiedSlots.add(slot);
+    if (chosen !== undefined) {
+      setAssigned(person.employeeId, chosen, "BREAK");
+      results.push({ employeeId: person.employeeId, slotIndex: chosen, code: "BREAK" });
+      breakOccupiedSlots.add(chosen);
     }
   }
 
@@ -305,7 +280,7 @@ export function buildAutoAssignPlan(
   for (const person of stableOrder) {
     if (person.employeeRole === "PARTTIME") continue; // パートは事務時間NG
     for (let s = person.activeStartIdx; s < person.activeEndIdx; s++) {
-      if (getAssigned(person.employeeId, s)) continue; // 何かしら既に入っているスロットはスキップ
+      if (getAssigned(person.employeeId, s)) continue;
       setAssigned(person.employeeId, s, "OFFICE");
       results.push({ employeeId: person.employeeId, slotIndex: s, code: "OFFICE" });
     }

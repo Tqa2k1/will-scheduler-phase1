@@ -23,6 +23,9 @@ whill-scheduler/
 │   │   ├── layout.tsx, page.tsx, providers.tsx, globals.css
 │   ├── components/            # 共通UIコンポーネント（現状ほぼ未使用/空）
 │   ├── lib/                   # サーバーサイドの共通ロジック（詳細は ARCHITECTURE.md）
+│   │   ├── dutySchedule.ts      # 業務A/B/全・WHILLの稼働時間/必要人数の定義（Prisma非依存。
+│   │   │                        #   サーバー側の自動アサインとクライアント側の「配置状況」表示が
+│   │   │                        #   共有する単一の情報源）
 │   │   ├── autoAssign.ts        # 自動アサインエンジン（本プロジェクトの中核ロジック）
 │   │   ├── autoBackfill.ts      # 欠勤発生時の自動代替配置
 │   │   ├── dailyRoster.ts       # 1日分のスタッフ一覧構築（UI/Excel/PDF共通）

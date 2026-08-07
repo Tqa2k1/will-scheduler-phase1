@@ -25,7 +25,15 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
     const workDate = new Date(parsed.data.date);
-    const rosterItems = await buildDailyRosterView(workDate);
+    const [rosterItems, rolePriorities] = await Promise.all([
+      buildDailyRosterView(workDate),
+      prisma.rolePriority.findMany(),
+    ]);
+    // ⑦ 業務優先順位: 管理画面で設定された RolePriority を必ず反映する（ランダム配置は禁止）。
+    // src/lib/autoBackfill.ts と同じ考え方・同じフォールバック（未設定=999＝最低優先）。
+    const priorityByRole: Record<string, number> = Object.fromEntries(
+      rolePriorities.map((p) => [p.role, p.priorityOrder])
+    );
 
     const positions = await prisma.cartPosition.findMany({
       where: {
@@ -55,7 +63,7 @@ export async function POST(req: NextRequest) {
       demandByCode[p.code as "A" | "B" | "全"] = req?.requiredCount ?? 1;
     }
 
-    const plan = buildAutoAssignPlan(rosterItems, demandByCode);
+    const plan = buildAutoAssignPlan(rosterItems, demandByCode, priorityByRole);
     const targetEmployeeIds = rosterItems.map((r) => r.employeeId);
 
     const pad = (n: number) => n.toString().padStart(2, "0");

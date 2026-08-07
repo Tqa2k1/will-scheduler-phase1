@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { DUTY_PRIORITY, WHILL_EVENTS, isDutyActiveAtSlot, requiredCountAtSlot, DutyCode } from "@/lib/dutySchedule";
 
 type CartPosition = { id: string; code: string; name: string; category: "CART" | "SPECIAL"; color: string | null };
 type RosterItem = {
@@ -24,8 +25,6 @@ type Assignment = {
   cartPositionId: string;
   cartPosition: CartPosition;
 };
-
-const PRODUCTIVE_CODES = ["A", "B", "全"];
 
 function buildHourlySlots() {
   const slots: { start: string; end: string }[] = [];
@@ -70,13 +69,17 @@ export default function SchedulePage() {
   const [roster, setRoster] = useState<RosterItem[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [positions, setPositions] = useState<CartPosition[]>([]);
+  // 業務A/B/全の時間帯あたり必要人数（管理画面 /tasks の設定値。自動アサインAPIと同じ
+  // ソースから取得することで、「配置状況」表示と自動アサインの不足判定を一致させる）
+  const [demandByCode, setDemandByCode] = useState<Partial<Record<DutyCode, number>>>({});
   const [autoAssigning, setAutoAssigning] = useState(false);
   const [notLinked, setNotLinked] = useState(false);
 
   async function load() {
-    const [schedRes, posRes] = await Promise.all([
+    const [schedRes, posRes, reqRes] = await Promise.all([
       fetch(`/api/schedule?date=${date}`),
       fetch(`/api/cart-positions`),
+      fetch(`/api/task-requirements`),
     ]);
     if (schedRes.ok) {
       const data = await schedRes.json();
@@ -85,6 +88,17 @@ export default function SchedulePage() {
       setNotLinked(!!data.notLinked);
     }
     if (posRes.ok) setPositions(await posRes.json());
+    if (reqRes.ok) {
+      const requirements: { cartPosition: { code: string }; appliesToAllRoles: boolean; requiredCount: number }[] =
+        await reqRes.json();
+      const next: Partial<Record<DutyCode, number>> = {};
+      for (const duty of DUTY_PRIORITY) {
+        const forDuty = requirements.filter((r) => r.cartPosition.code === duty);
+        const chosen = forDuty.find((r) => r.appliesToAllRoles) ?? forDuty[0];
+        if (chosen) next[duty] = chosen.requiredCount;
+      }
+      setDemandByCode(next);
+    }
   }
 
   useEffect(() => {
@@ -98,26 +112,46 @@ export default function SchedulePage() {
     return map;
   }, [assignments]);
 
-  // 時間ごとに 車A/車B/全 が誰かに割り当てられているか確認し、不足を判定
+  // 時間帯ごとに、業務A/B/全・WHILL関連業務の「必要人数 vs 実際の配置人数」を比較して
+  // 不足を判定する。
+  //
+  // 修正前の問題: PRODUCTIVE_CODES(=A/B/全)がその時間に配置されているかどうかだけを見ており、
+  // 各業務自身の稼働時間（例: 業務Bは6:00〜24:00）を考慮していなかったため、業務が本来
+  // 稼働していない時間帯（例: 業務Bの24:00以降）でも「誰かが勤務していれば」不足表示が
+  // 出てしまっていた。またWHILL関連業務は計算対象に含まれていなかった。
+  //
+  // 修正後: 各コードごとに src/lib/dutySchedule.ts の稼働時間定義でフィルタし、稼働時間内の
+  // 時間帯のみを対象に、必要人数(requiredCountAtSlot)と実際の配置人数を比較する。
   const shortageBySlot = useMemo(() => {
-    const covered = new Map<string, Set<string>>();
+    const countBySlotAndCode = new Map<string, Map<string, number>>();
     for (const a of assignments) {
-      if (!covered.has(a.slotStart)) covered.set(a.slotStart, new Set());
-      covered.get(a.slotStart)!.add(a.cartPosition.code);
+      if (!countBySlotAndCode.has(a.slotStart)) countBySlotAndCode.set(a.slotStart, new Map());
+      const m = countBySlotAndCode.get(a.slotStart)!;
+      m.set(a.cartPosition.code, (m.get(a.cartPosition.code) ?? 0) + 1);
     }
+
     const result = new Map<string, string[]>();
-    for (const s of SLOTS) {
-      const coveredCodes = covered.get(s.start) ?? new Set();
-      const missing = PRODUCTIVE_CODES.filter((c) => !coveredCodes.has(c));
-      // その時間に誰も勤務していない（roster側でactiveな人が0人）場合は不足とみなさない
-      const hasActiveStaff = roster.some((r) => {
-        const idx = SLOTS.findIndex((slot) => slot.start === s.start);
-        return idx >= r.activeStartIdx && idx < r.activeEndIdx;
-      });
-      result.set(s.start, hasActiveStaff ? missing : []);
-    }
+    SLOTS.forEach((s, idx) => {
+      const counts = countBySlotAndCode.get(s.start) ?? new Map<string, number>();
+      const missing: string[] = [];
+
+      for (const duty of DUTY_PRIORITY) {
+        if (!isDutyActiveAtSlot(duty, idx)) continue; // 稼働時間外は不足計算しない
+        const required = requiredCountAtSlot(duty, idx, demandByCode);
+        const actual = counts.get(duty) ?? 0;
+        if (actual < required) missing.push(duty);
+      }
+      for (const event of WHILL_EVENTS) {
+        if (event.slotIndex !== idx) continue; // 該当時間帯のみ計算対象
+        const required = requiredCountAtSlot(event.code, idx, demandByCode);
+        const actual = counts.get(event.code) ?? 0;
+        if (actual < required) missing.push(event.code);
+      }
+
+      result.set(s.start, missing);
+    });
     return result;
-  }, [assignments, roster]);
+  }, [assignments, demandByCode]);
 
   async function handlePositionChange(employeeId: string, slotStart: string, slotEnd: string, cartPositionId: string) {
     await fetch("/api/schedule", {
@@ -194,7 +228,6 @@ export default function SchedulePage() {
           <thead>
             <tr>
               <th style={{ ...thStyle, position: "sticky", left: 0, zIndex: 2,minWidth:"100px", backgroundColor: "white" }}>氏名</th>
-              <th style={thStyle}>シフト</th>
               <th style={thStyle}>勤務時間</th>
               {SLOTS.map((s) => (
                 <th key={s.start} style={{ ...thStyle, minWidth: 52 }}>{s.start}</th>
@@ -202,7 +235,6 @@ export default function SchedulePage() {
             </tr>
             <tr>
               <th style={{ ...thStyle, position: "sticky", left: 0, zIndex: 2, fontWeight: 400 }}>配置状況</th>
-              <th style={thStyle}></th>
               <th style={thStyle}></th>
               {SLOTS.map((s) => {
                 const missing = shortageBySlot.get(s.start) ?? [];
@@ -230,9 +262,6 @@ export default function SchedulePage() {
                 <td style={{ ...tdStyle, position: "sticky", left: 0,zIndex: 10, background: "var(--color-surface)",minWidth: "100px",
   width: "100px", fontWeight: 600, whiteSpace: "nowrap" }}>
                   {r.employeeName}
-                </td>
-                <td style={{ ...tdStyle, color: "var(--color-text-muted)", fontSize: 11 }}>
-                  {r.isCarryOver ? "明番（引継）" : r.shiftTypeCode ?? ""}
                 </td>
                 <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>
                   {r.resolvedStart && r.resolvedEnd ? `${r.resolvedStart}〜${r.resolvedEnd}` : ""}
@@ -291,12 +320,13 @@ export default function SchedulePage() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ width: 12, height: 12, borderRadius: 3, background: "#fee2e2", border: "1px solid var(--color-border)", display: "inline-block" }} />
-          人員不足（車A・車B・全のいずれかが未配置）
+          人員不足（業務A・業務B・業務全・WHILL関連業務のいずれかが必要人数未満。各業務の稼働時間内のみ判定）
         </div>
       </div>
 
       <p style={{ color: "var(--color-text-muted)", fontSize: 13, marginTop: 8 }}>
-        並び順: INC → 開始時刻の早い順（前日22時〜翌8時勤務の人は、当日シートでは「明番（引継）」として4:00〜8:00のみ表示）
+        並び順: 勤務開始時刻が早い順（同じ開始時刻の場合は終了時刻が早い順）。役割による並び替えは行いません。
+        前日22時〜翌8時勤務など日付をまたぐ夜勤は、当日シートでは4:00〜シフト終了時刻のみ「引き継ぎ」として表示されます。
       </p>
     </div>
   );
