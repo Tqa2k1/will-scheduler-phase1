@@ -33,11 +33,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (parsed.data.decision === "APPROVED") {
     await prisma.monthRoster.upsert({
       where: { employeeId_workDate: { employeeId: claim.employeeId, workDate: claim.workDate } },
-      update: { status: "WORK", updatedBy: session.user.email ?? undefined },
+      update: {
+        status: "WORK",
+        shiftTypeId: claim.shiftTypeId ?? undefined,
+        updatedBy: session.user.email ?? undefined,
+      },
       create: {
         employeeId: claim.employeeId,
         workDate: claim.workDate,
         status: "WORK",
+        shiftTypeId: claim.shiftTypeId ?? null,
         createdBy: session.user.email ?? undefined,
       },
     });

@@ -170,6 +170,11 @@ export default function RosterPage() {
             </button>
           )}
           {isAdmin && (
+            <Link href={`/roster/shift-adjustment?month=${monthStr}`} className="btn-secondary" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>
+              シフト調整
+            </Link>
+          )}
+          {isAdmin && (
             <button className="btn-secondary" onClick={() => setAiModalOpen(true)}>
               AI追加
             </button>

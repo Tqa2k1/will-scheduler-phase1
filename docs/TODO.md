@@ -65,11 +65,13 @@
 ## 🔴 High Priority (Quan trọng)
 
 ### Security
-- [ ] Kiểm tra tất cả API route có getServerSession
-- [ ] **Mới phát hiện**: `/api/ai-confirm` và `/api/roster/apply-ai-changes` hiện KHÔNG có
-      getServerSession / kiểm tra quyền ADMIN — cần xác nhận đây có phải lỗ hổng hay không
-      và bổ sung nếu cần (xem docs/API.md mục "Chưa xác nhận").
-- [ ] Giới hạn EMPLOYEE chỉ xem dữ liệu của bản thân
+- [x] Kiểm tra tất cả API route có getServerSession — đã quét toàn bộ `route.ts`, chỉ thiếu ở
+      NextAuth handler (đúng, không cần check ở đó).
+- [x] **Đã vá**: `/api/ai-confirm` và `/api/roster/apply-ai-changes` đã thêm getServerSession +
+      kiểm tra role ADMIN (2026-08).
+- [x] ~~Giới hạn EMPLOYEE chỉ xem dữ liệu của bản thân~~ → đã đổi ngược lại theo yêu cầu nghiệp vụ:
+      EMPLOYEE được xem toàn bộ 日別スケジュール (ai làm gì, giờ nào, 業務 gì), chỉ không được
+      sửa/tạo/xóa. Đây là chủ đích, không phải lỗ hổng (xem GET /api/schedule).
 - [ ] Đồng bộ quyền ADMIN / INC / EMPLOYEE
 - [ ] Kiểm tra API export Excel/PDF
 

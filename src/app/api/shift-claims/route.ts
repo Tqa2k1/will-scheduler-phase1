@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getDailyStaffingStatus } from "@/lib/dailyStaffing";
+import { getMonthShiftGaps } from "@/lib/monthlyShiftGap";
+import { isWithinPartTimeWeeklyLimit } from "@/lib/weeklyHours";
 import { z } from "zod";
 
 const LOOKAHEAD_DAYS = 30;
@@ -19,7 +21,7 @@ export async function GET() {
   if (session.user.role === "ADMIN") {
     const pending = await prisma.shiftClaimRequest.findMany({
       where: { status: "PENDING" },
-      include: { employee: true },
+      include: { employee: true, shiftType: true },
       orderBy: { requestedAt: "asc" },
     });
     return NextResponse.json({ pending });
@@ -54,10 +56,46 @@ export async function GET() {
     if (shortage > 0) availableDates.push({ date: dateKey, shortageCount: shortage });
   }
 
-  return NextResponse.json({ availableDates, myRequests, notLinked: false });
+  const myEmployee = await prisma.employee.findUnique({ where: { id: employeeId } });
+
+  // シフト調整（早番/遅番/明番、各4名）で自分が候補者になっているシフトを再計算する。
+  // 「申請済み」の日付はここでも除外する（1日1件のKIBOのため、既存の@@unique制約と一致させる）。
+  const kiboOptions: { date: string; shiftTypeId: string; shiftTypeCode: string; shiftLabel: string }[] = [];
+  const monthsToCheck = new Set([today.getUTCFullYear() * 100 + (today.getUTCMonth() + 1)]);
+  const nextMonth = new Date(today);
+  nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
+  monthsToCheck.add(nextMonth.getUTCFullYear() * 100 + (nextMonth.getUTCMonth() + 1));
+
+  for (const ym of monthsToCheck) {
+    const year = Math.floor(ym / 100);
+    const month = ym % 100;
+    const gaps = await getMonthShiftGaps(year, month);
+    for (const gap of gaps) {
+      if (alreadyWorkingDates.has(gap.date) || alreadyRequestedDates.has(gap.date)) continue;
+      const gapDate = new Date(gap.date + "T00:00:00Z");
+      if (gapDate < today) continue;
+
+      if (myEmployee && myEmployee.role === "PARTTIME") {
+        const shiftType = await prisma.shiftType.findUnique({ where: { id: gap.shiftTypeId } });
+        if (shiftType) {
+          const [sh, sm] = shiftType.defaultStartTime.split(":").map(Number);
+          const [eh, em] = shiftType.defaultEndTime.split(":").map(Number);
+          let hours = eh * 60 + em - (sh * 60 + sm);
+          if (hours < 0) hours += 24 * 60;
+          hours /= 60;
+          const withinLimit = await isWithinPartTimeWeeklyLimit(employeeId, "PARTTIME", gapDate, hours);
+          if (!withinLimit) continue; // 週20時間を超えるため、この従業員には表示しない
+        }
+      }
+
+      kiboOptions.push({ date: gap.date, shiftTypeId: gap.shiftTypeId, shiftTypeCode: gap.shiftTypeCode, shiftLabel: gap.shiftLabel });
+    }
+  }
+
+  return NextResponse.json({ availableDates, kiboOptions, myRequests, notLinked: false });
 }
 
-const ClaimInput = z.object({ workDate: z.string() });
+const ClaimInput = z.object({ workDate: z.string(), shiftTypeId: z.string().optional() });
 
 // POST /api/shift-claims — 従業員が人員不足の日に「申請」する
 export async function POST(req: NextRequest) {
@@ -76,11 +114,12 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const workDate = new Date(parsed.data.workDate);
+  const shiftTypeId = parsed.data.shiftTypeId ?? null;
 
   const claim = await prisma.shiftClaimRequest.upsert({
     where: { employeeId_workDate: { employeeId, workDate } },
-    update: { status: "PENDING", requestedAt: new Date(), decidedAt: null, decidedBy: null },
-    create: { employeeId, workDate, status: "PENDING" },
+    update: { status: "PENDING", shiftTypeId, requestedAt: new Date(), decidedAt: null, decidedBy: null },
+    create: { employeeId, workDate, shiftTypeId, status: "PENDING" },
   });
 
   return NextResponse.json(claim, { status: 201 });

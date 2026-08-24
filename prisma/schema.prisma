@@ -15,19 +15,19 @@ datasource db {
 // ---------- Tài khoản đăng nhập (管理者 / 従業員) ----------
 enum UserRole {
   ADMIN
-  INC      // 現在未使用（将来の拡張用に残す）
+  INC // 現在未使用（将来の拡張用に残す）
   EMPLOYEE // 従業員アカウント：月間・日別スケジュールの閲覧のみ
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String    @id @default(cuid())
+  email        String    @unique
   passwordHash String
   name         String
-  role         UserRole @default(EMPLOYEE)
-  employeeId   String?  @unique
+  role         UserRole  @default(EMPLOYEE)
+  employeeId   String?   @unique
   employee     Employee? @relation(fields: [employeeId], references: [id])
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 }
 
 // ---------- Nhân viên ----------
@@ -47,60 +47,61 @@ enum CommuteType {
 }
 
 model Employee {
-  id           String       @id @default(cuid())
-  fullName     String
-  role         EmployeeRole @default(STAFF)
-  commuteType  CommuteType?
-  isActive     Boolean      @default(true)
-  note         String?
-  contactEmail String?     // 連絡先メールアドレス（月間スケジュール確定時の通知送信用）
-  baseStartTime String?     // 基本勤務時間の開始（例: "08:00"）— 未設定なら ShiftType の時間を使う
-  baseEndTime   String?     // 基本勤務時間の終了（例: "17:00"）
-  user         User?
-  monthRoster        MonthRoster[]
-  dailyAssignments   DailyAssignment[]
-  breaks             Break[]
+  id                  String                    @id @default(cuid())
+  fullName            String
+  role                EmployeeRole              @default(STAFF)
+  commuteType         CommuteType?
+  isActive            Boolean                   @default(true)
+  note                String?
+  contactEmail        String? // 連絡先メールアドレス（月間スケジュール確定時の通知送信用）
+  baseStartTime       String? // 基本勤務時間の開始（例: "08:00"）— 未設定なら ShiftType の時間を使う
+  baseEndTime         String? // 基本勤務時間の終了（例: "17:00"）
+  user                User?
+  monthRoster         MonthRoster[]
+  dailyAssignments    DailyAssignment[]
+  breaks              Break[]
   personalConstraints PersonalConstraint[]
-  incidentFlags      IncidentFlag[]
-  rotationPatterns   EmployeeRotationPattern[]
-  shiftClaimRequests ShiftClaimRequest[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  incidentFlags       IncidentFlag[]
+  rotationPatterns    EmployeeRotationPattern[]
+  shiftClaimRequests  ShiftClaimRequest[]
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
 }
 
 // ---------- Loại ca ----------
 model ShiftType {
-  id               String   @id @default(cuid())
-  code             String   @unique // 明番/早番/中番/遅番/超早/超遅/INC早/INC遅
+  id               String        @id @default(cuid())
+  code             String        @unique // 明番/早番/中番/遅番/超早/超遅/INC早/INC遅
   name             String
-  defaultStartTime String   // "08:00"
-  defaultEndTime   String   // "17:00"
-  spansMidnight    Boolean  @default(false)
+  defaultStartTime String // "08:00"
+  defaultEndTime   String // "17:00"
+  spansMidnight    Boolean       @default(false)
   monthRoster      MonthRoster[]
+  shiftClaimRequests ShiftClaimRequest[]
 }
 
 // ---------- Master Roster (tầng tháng) ----------
 enum RosterStatus {
   WORK
-  OFF          // 公休（ローテーションパターンによる定期休み）
-  PAID_LEAVE   // 有休
+  OFF // 公休（ローテーションパターンによる定期休み）
+  PAID_LEAVE // 有休
   ADJUST_LEAVE // 調整休
 }
 
 model MonthRoster {
-  id          String       @id @default(cuid())
-  employeeId  String
-  employee    Employee     @relation(fields: [employeeId], references: [id])
-  workDate    DateTime     @db.Date
-  shiftTypeId String?
-  shiftType   ShiftType?   @relation(fields: [shiftTypeId], references: [id])
-  status      RosterStatus @default(WORK)
+  id                String       @id @default(cuid())
+  employeeId        String
+  employee          Employee     @relation(fields: [employeeId], references: [id])
+  workDate          DateTime     @db.Date
+  shiftTypeId       String?
+  shiftType         ShiftType?   @relation(fields: [shiftTypeId], references: [id])
+  status            RosterStatus @default(WORK)
   overrideStartTime String? // その日だけの勤務開始時間（例外）— 未設定なら基本勤務時間/ShiftTypeを使う
   overrideEndTime   String? // その日だけの勤務終了時間（例外）
-  createdBy   String?
-  updatedBy   String?
-  updatedAt   DateTime     @updatedAt
-  createdAt   DateTime     @default(now())
+  createdBy         String?
+  updatedBy         String?
+  updatedAt         DateTime     @updatedAt
+  createdAt         DateTime     @default(now())
 
   @@unique([employeeId, workDate])
   @@index([workDate])
@@ -113,36 +114,36 @@ enum PositionCategory {
 }
 
 model CartPosition {
-  id       String           @id @default(cuid())
-  code     String           @unique // A, B, 全, BF, BREAK, MOVE, WHILL_PREP, WHILL_CLEANUP, MTG
-  name     String
-  category PositionCategory
-  isActive           Boolean  @default(true)  // 使用する/しない
-  description        String?                  // 業務の説明
-  operatingStartTime String?                  // 業務の開始時間（例: "05:00"）
-  operatingEndTime   String?                  // 業務の終了時間（例: "23:00"）
-  color              String?                  // 業務カラー（例: "#3b82f6"）。スケジュール画面の表示色に使用
+  id                 String           @id @default(cuid())
+  code               String           @unique // A, B, 全, BF, BREAK, MOVE, WHILL_PREP, WHILL_CLEANUP, MTG
+  name               String
+  category           PositionCategory
+  isActive           Boolean          @default(true) // 使用する/しない
+  description        String? // 業務の説明
+  operatingStartTime String? // 業務の開始時間（例: "05:00"）
+  operatingEndTime   String? // 業務の終了時間（例: "23:00"）
+  color              String? // 業務カラー（例: "#3b82f6"）。スケジュール画面の表示色に使用
 
-  operatingHours  CartOperatingHours[]
-  demandTemplates DemandTemplate[]
+  operatingHours   CartOperatingHours[]
+  demandTemplates  DemandTemplate[]
   dailyAssignments DailyAssignment[]
-  requirements    TaskRequirement[]
+  requirements     TaskRequirement[]
 }
 
 // ---------- 業務要件: 各業務に必要な人数・対象role ----------
 // 現時点では「対象role」「必要人数」のみのシンプルな要件。将来的に休憩ルール・連続勤務上限・
 // 業務ごとの最低/最大人数・特定社員のNG/OKなど拡張予定（拡張しやすいよう独立モデルにしている）。
 model TaskRequirement {
-  id                 String       @id @default(cuid())
-  cartPositionId     String
-  cartPosition       CartPosition @relation(fields: [cartPositionId], references: [id])
-  appliesToAllRoles  Boolean      @default(true)  // true = 全役割対象、false = targetRolesのみ対象
-  targetRoles        EmployeeRole[]                // appliesToAllRoles=false のときに使用
-  requiredCount      Int          @default(1)      // 必要人数
-  note               String?
-  isActive           Boolean      @default(true)
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  id                String         @id @default(cuid())
+  cartPositionId    String
+  cartPosition      CartPosition   @relation(fields: [cartPositionId], references: [id])
+  appliesToAllRoles Boolean        @default(true) // true = 全役割対象、false = targetRolesのみ対象
+  targetRoles       EmployeeRole[] // appliesToAllRoles=false のときに使用
+  requiredCount     Int            @default(1) // 必要人数
+  note              String?
+  isActive          Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
   @@index([cartPositionId])
 }
@@ -151,7 +152,7 @@ model TaskRequirement {
 model RolePriority {
   id            String       @id @default(cuid())
   role          EmployeeRole @unique
-  priorityOrder Int          // 小さいほど優先度が高い
+  priorityOrder Int // 小さいほど優先度が高い
   updatedAt     DateTime     @updatedAt
 }
 
@@ -160,9 +161,9 @@ model CartOperatingHours {
   id             String       @id @default(cuid())
   cartPositionId String
   cartPosition   CartPosition @relation(fields: [cartPositionId], references: [id])
-  dayTemplate    String       // "WEEKDAY" | "WEEKEND" | "HOLIDAY" ...
-  startTime      String       // "05:00"
-  endTime        String       // "02:00" (qua ngày hôm sau nếu < startTime)
+  dayTemplate    String // "WEEKDAY" | "WEEKEND" | "HOLIDAY" ...
+  startTime      String // "05:00"
+  endTime        String // "02:00" (qua ngày hôm sau nếu < startTime)
 }
 
 // Nhu cầu nhân lực hợp đồng theo slot 30 phút (契約仕様工数)
@@ -171,7 +172,7 @@ model DemandTemplate {
   cartPositionId String
   cartPosition   CartPosition @relation(fields: [cartPositionId], references: [id])
   dayTemplate    String
-  timeSlot       String       // "07:00" nghĩa là slot 07:00-07:30
+  timeSlot       String // "07:00" nghĩa là slot 07:00-07:30
   requiredCount  Int          @default(0)
 
   @@unique([cartPositionId, dayTemplate, timeSlot])
@@ -183,8 +184,8 @@ model DailyAssignment {
   employeeId     String
   employee       Employee     @relation(fields: [employeeId], references: [id])
   workDate       DateTime     @db.Date
-  slotStart      String       // "13:30"
-  slotEnd        String       // "14:00"
+  slotStart      String // "13:30"
+  slotEnd        String // "14:00"
   cartPositionId String
   cartPosition   CartPosition @relation(fields: [cartPositionId], references: [id])
   source         String       @default("MANUAL") // AUTO | MANUAL
@@ -220,11 +221,11 @@ model Break {
 // { "cycleDays": 12, "pattern": [...], "shiftCodes": ["早番","早番","早番","早番",null,null,"遅番","遅番","遅番","遅番",null,null] }
 // shiftCodes が無い場合は従来通りstatus(WORK/OFF)のみ設定する（既存パターンは変更不要）。
 model RotationPattern {
-  id               String   @id @default(cuid())
-  code             String   @unique
-  name             String
+  id                String  @id @default(cuid())
+  code              String  @unique
+  name              String
   patternDefinition Json
-  isActive         Boolean  @default(true)
+  isActive          Boolean @default(true)
 
   employees EmployeeRotationPattern[]
 }
@@ -249,38 +250,38 @@ enum ConstraintType {
 }
 
 model PersonalConstraint {
-  id            String         @id @default(cuid())
-  employeeId    String
-  employee      Employee       @relation(fields: [employeeId], references: [id])
-  workDate      DateTime       @db.Date
-  rangeStart    String?
-  rangeEnd      String?
+  id             String         @id @default(cuid())
+  employeeId     String
+  employee       Employee       @relation(fields: [employeeId], references: [id])
+  workDate       DateTime       @db.Date
+  rangeStart     String?
+  rangeEnd       String?
   constraintType ConstraintType
-  note          String?
+  note           String?
 
   @@index([employeeId, workDate])
 }
 
 // ---------- Ghi nhận phát sinh thực tế ----------
 enum IncidentType {
-  LATE            // 遅刻
-  DELAY           // 遅延 ◆
-  EARLY_LEAVE     // 早退
-  OVERTIME        // 残業
-  BF_FEE_CUT      // BF代カット ★
+  LATE // 遅刻
+  DELAY // 遅延 ◆
+  EARLY_LEAVE // 早退
+  OVERTIME // 残業
+  BF_FEE_CUT // BF代カット ★
   OWN_CAR_COMMUTE // 車通勤 ◎
-  ONE_WAY_TAXI    // 片道タクシー
+  ONE_WAY_TAXI // 片道タクシー
 }
 
 model IncidentFlag {
-  id          String       @id @default(cuid())
-  employeeId  String
-  employee    Employee     @relation(fields: [employeeId], references: [id])
-  workDate    DateTime     @db.Date
-  flagType    IncidentType
-  note        String?
-  recordedBy  String?
-  recordedAt  DateTime     @default(now())
+  id         String       @id @default(cuid())
+  employeeId String
+  employee   Employee     @relation(fields: [employeeId], references: [id])
+  workDate   DateTime     @db.Date
+  flagType   IncidentType
+  note       String?
+  recordedBy String?
+  recordedAt DateTime     @default(now())
 }
 
 // ---------- 勤務希望申請（人員不足の日に従業員が「申請」し、INCが承認/却下する） ----------
@@ -295,6 +296,8 @@ model ShiftClaimRequest {
   employeeId  String
   employee    Employee         @relation(fields: [employeeId], references: [id])
   workDate    DateTime         @db.Date
+  shiftTypeId String?          // どのシフト（早番/遅番/明番）へのKIBOか（月次シフト調整機能で使用。任意）
+  shiftType   ShiftType?       @relation(fields: [shiftTypeId], references: [id])
   status      ShiftClaimStatus @default(PENDING)
   requestedAt DateTime         @default(now())
   decidedAt   DateTime?
@@ -303,15 +306,16 @@ model ShiftClaimRequest {
   @@unique([employeeId, workDate])
   @@index([workDate, status])
 }
+
 model RosterAuditLog {
-  id         String   @id @default(cuid())
-  tableName  String
-  recordId   String
-  action     String   // CREATE | UPDATE | DELETE
-  changedBy  String?
-  changedAt  DateTime @default(now())
-  oldValue   Json?
-  newValue   Json?
+  id        String   @id @default(cuid())
+  tableName String
+  recordId  String
+  action    String // CREATE | UPDATE | DELETE
+  changedBy String?
+  changedAt DateTime @default(now())
+  oldValue  Json?
+  newValue  Json?
 
   @@index([tableName, recordId])
 }

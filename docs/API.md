@@ -107,14 +107,13 @@
 - 処理: Groq API（`groq-sdk`）を使い、月間ローテーションのAI変更提案を生成する。
 
 ### POST `/api/roster/apply-ai-changes`
+- 権限: ADMINのみ（2026-08 追加）。
 - 処理: `ai-assist`が提案した変更（`changes[]`、`employeeName`ベース）をMonthRosterに適用する。
-- ⚠️ 注意: このルートには `getServerSession` によるログイン/権限チェックが実装されていない
-  （他の管理系APIと異なる）。要確認・要修正候補（TODO.md参照）。
 
 ### POST `/api/ai-confirm`
+- 権限: ADMINのみ（2026-08 追加）。
 - 入力: `employeeName, date, newStatus`。
 - 処理: 氏名で従業員を検索し、`MonthRoster.updateMany`でステータスを更新する。
-- ⚠️ 注意: こちらも `getServerSession` によるログイン/権限チェックが実装されていない。
 
 ## 日別スケジュール（DailyAssignment）
 
@@ -159,7 +158,7 @@
 ### GET `/api/export/schedule-pdf?date=2026-07-01`
 - 日別スケジュールをPDFで出力（`pdfkit`）。
 
-## ⚠️ 未確認・要確認事項
-- `/api/roster/apply-ai-changes` と `/api/ai-confirm` は認証チェックが無いように見える
-  （他のADMIN専用APIと実装パターンが異なる）。セキュリティ上のリスクの可能性があるため、
-  `docs/TODO.md` に記載し、対応要否を確認すること。
+## ✅ 修正済み（2026-08）
+- `/api/roster/apply-ai-changes` と `/api/ai-confirm` に `getServerSession` + ADMIN権限チェックを追加した
+  （未認証の第三者が勤務表を書き換えられる脆弱性だった）。他の全APIルートも
+  `getServerSession` の有無を全件スキャンし、NextAuthのハンドラ自体を除き漏れがないことを確認済み。
