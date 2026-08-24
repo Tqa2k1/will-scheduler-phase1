@@ -17,7 +17,7 @@ export type ShiftGap = {
 };
 
 export type ShiftGapWithCandidates = ShiftGap & {
-  candidates: { employeeId: string; employeeName: string }[];
+  candidates: { employeeId: string; employeeName: string; hasEmail: boolean }[];
 };
 
 function daysInMonth(year: number, month: number) {
@@ -85,7 +85,7 @@ export async function getMonthShiftGaps(year: number, month: number): Promise<Sh
 // 指定した1つの不足シフト（date + shiftTypeCode）について、対応可能な候補者を探す。
 // 条件: その日にまだ出勤予定(WORK)が入っていない（休み・未設定はOK）、
 //       バイトの場合はこのシフトを追加しても週20時間を超えない。
-export async function findCandidatesForShift(date: string, shiftTypeCode: string): Promise<{ employeeId: string; employeeName: string }[]> {
+export async function findCandidatesForShift(date: string, shiftTypeCode: string): Promise<{ employeeId: string; employeeName: string; hasEmail: boolean }[]> {
   const workDate = new Date(date + "T00:00:00Z");
   const shiftType = await prisma.shiftType.findUnique({ where: { code: shiftTypeCode } });
   if (!shiftType) return [];
@@ -103,12 +103,12 @@ export async function findCandidatesForShift(date: string, shiftTypeCode: string
   if (shiftHours < 0) shiftHours += 24 * 60;
   shiftHours /= 60;
 
-  const candidates: { employeeId: string; employeeName: string }[] = [];
+  const candidates: { employeeId: string; employeeName: string; hasEmail: boolean }[] = [];
   for (const emp of employees) {
     if (alreadyWorkingIds.has(emp.id)) continue; // その日すでに出勤予定がある
     const withinLimit = await isWithinPartTimeWeeklyLimit(emp.id, emp.role, workDate, shiftHours);
     if (!withinLimit) continue; // バイトの週20時間上限を超える
-    candidates.push({ employeeId: emp.id, employeeName: emp.fullName });
+    candidates.push({ employeeId: emp.id, employeeName: emp.fullName, hasEmail: !!emp.contactEmail });
   }
   return candidates;
 }

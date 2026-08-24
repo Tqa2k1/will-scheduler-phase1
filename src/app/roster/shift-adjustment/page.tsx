@@ -1,11 +1,11 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
-type Candidate = { employeeId: string; employeeName: string };
+type Candidate = { employeeId: string; employeeName: string; hasEmail: boolean };
 type Gap = {
   date: string;
   shiftTypeId: string;
@@ -21,7 +21,7 @@ function gapKey(g: Gap) {
   return `${g.date}|${g.shiftTypeCode}`;
 }
 
- function ShiftAdjustmentContent() {
+export default function ShiftAdjustmentPage() {
   const { data: session, status } = useSession();
   const searchParams = useSearchParams();
   const initialMonth = searchParams.get("month") ?? new Date().toISOString().slice(0, 7);
@@ -90,7 +90,8 @@ function gapKey(g: Gap) {
           (data.failures?.length ? `\n${data.failures.join("\n")}` : "")
       );
     } else {
-      setResultMsg("送信に失敗しました。");
+      const data = await res.json().catch(() => null);
+      setResultMsg(`送信に失敗しました。${data?.detail || data?.error ? `\n詳細: ${data.detail || data.error}` : ""}`);
     }
   }
 
@@ -125,7 +126,12 @@ function gapKey(g: Gap) {
       </p>
 
       {resultMsg && (
-        <p style={{ fontSize: 13, color: "var(--color-accent)", whiteSpace: "pre-line" }}>{resultMsg}</p>
+        <div
+          className="card"
+          style={{ marginBottom: 16, background: "#eff6ff", borderColor: "#bfdbfe", fontSize: 13, whiteSpace: "pre-line" }}
+        >
+          {resultMsg}
+        </div>
       )}
 
       {gaps.length === 0 && !loading && (
@@ -177,6 +183,9 @@ function gapKey(g: Gap) {
                     <label key={c.employeeId} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
                       <input type="checkbox" checked={selected.has(key)} onChange={() => toggle(g, c.employeeId)} />
                       {c.employeeName}
+                      {!c.hasEmail && (
+                        <span style={{ color: "var(--color-danger)", fontSize: 11 }}>（メール未登録）</span>
+                      )}
                     </label>
                   );
                 })}
@@ -192,12 +201,5 @@ function gapKey(g: Gap) {
         </>
       )}
     </div>
-  );
-}
-export default function ShiftAdjustmentPage() {
-  return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <ShiftAdjustmentContent />
-    </Suspense>
   );
 }
