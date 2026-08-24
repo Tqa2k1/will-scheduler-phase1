@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -21,7 +21,7 @@ function gapKey(g: Gap) {
   return `${g.date}|${g.shiftTypeCode}`;
 }
 
-export default function ShiftAdjustmentPage() {
+function ShiftAdjustmentContent() {
   const { data: session, status } = useSession();
   const searchParams = useSearchParams();
   const initialMonth = searchParams.get("month") ?? new Date().toISOString().slice(0, 7);
@@ -201,5 +201,13 @@ export default function ShiftAdjustmentPage() {
         </>
       )}
     </div>
+  );
+}
+
+export default function ShiftAdjustmentPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ShiftAdjustmentContent />
+    </Suspense>
   );
 }
