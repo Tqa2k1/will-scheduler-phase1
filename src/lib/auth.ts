@@ -5,7 +5,10 @@ import { prisma } from "./prisma";
 
 // Cấu hình đăng nhập bằng email + mật khẩu, 2 role: ADMIN / INC
 export const authOptions: NextAuthOptions = {
-  session: { strategy: "jwt" },
+  session: {
+    strategy: "jwt",
+    maxAge: 12 * 60 * 60, // 12時間（副次的な安全策。メインの制御はsessionStorageベースの強制ログアウトで行う）
+  },
   pages: { signIn: "/login" },
   providers: [
     CredentialsProvider({

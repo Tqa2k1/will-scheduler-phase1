@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { SESSION_FLAG_KEY } from "../SessionGuard";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -23,6 +24,14 @@ export default function LoginPage() {
       setError("メールアドレスまたはパスワードが正しくありません。");
       return;
     }
+
+    // このタブ/ウィンドウが開いている間だけ有効なフラグ。ブラウザを閉じると自動的に消える。
+    try {
+      sessionStorage.setItem(SESSION_FLAG_KEY, "1");
+    } catch {
+      // sessionStorageが使えない環境では無視（ログイン自体は継続）
+    }
+
     router.push("/dashboard");
   }
 
