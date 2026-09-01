@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { DUTY_PRIORITY, WHILL_EVENTS, isDutyActiveAtSlot, requiredCountAtSlot, DutyCode } from "@/lib/dutySchedule";
+import { buildDisplaySlots, minutesSinceOperatingStart } from "@/lib/timeSlots";
 
 type CartPosition = { id: string; code: string; name: string; category: "CART" | "SPECIAL"; color: string | null };
 type RosterItem = {
@@ -26,17 +27,37 @@ type Assignment = {
   cartPosition: CartPosition;
 };
 
-function buildHourlySlots() {
-  const slots: { start: string; end: string }[] = [];
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  for (let i = 0; i < 24; i++) {
-    const startH = (4 + i) % 24;
-    const endH = (4 + i + 1) % 24;
-    slots.push({ start: `${pad(startH)}:00`, end: `${pad(endH)}:00` });
-  }
-  return slots;
+// 表示専用の30分刻みスロット（48個/日）。自動アサインの計算は従来通り1時間単位のまま
+// （src/lib/dutySchedule.ts）で、この画面の見た目だけを30分刻みに変更する。
+const SLOTS = buildDisplaySlots();
+
+// 30分スロットのインデックス(0-47) -> 対応する時間インデックス(0-23)。
+// activeStartIdx/activeEndIdxやdutySchedule.tsの各関数は「1時間=1インデックス」の前提のため、
+// 表示側のインデックスから変換して渡す。
+function toHourIdx(slotIdx: number): number {
+  return Math.floor(slotIdx / 2);
 }
-const SLOTS = buildHourlySlots();
+
+// 指定した従業員の割り当ての中から、このスロット開始時刻を含む（＝カバーしている）ものを探す。
+// 既存の1時間の業務は分割されないため、30分スロット2つにまたがって同じ割り当てが見つかる。
+function findCoveringAssignment(assignments: Assignment[], employeeId: string, slotStartTime: string): Assignment | undefined {
+  const target = minutesSinceOperatingStart(slotStartTime);
+  return assignments.find((a) => {
+    if (a.employeeId !== employeeId) return false;
+    const start = minutesSinceOperatingStart(a.slotStart);
+    let end = minutesSinceOperatingStart(a.slotEnd);
+    if (end <= start) end += 24 * 60; // 日をまたぐ／終了時刻が境界ちょうどの場合
+    return start <= target && target < end;
+  });
+}
+
+// カバーしている割り当ての長さ（分）。1時間の自動業務かどうかの判定に使う。
+function coveringDurationMinutes(a: Assignment): number {
+  const start = minutesSinceOperatingStart(a.slotStart);
+  let end = minutesSinceOperatingStart(a.slotEnd);
+  if (end <= start) end += 24 * 60;
+  return end - start;
+}
 
 const POSITION_COLORS: Record<string, string> = {
   A: "#dbeafe",
@@ -106,11 +127,8 @@ export default function SchedulePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
 
-  const assignMap = useMemo(() => {
-    const map = new Map<string, Assignment>();
-    for (const a of assignments) map.set(`${a.employeeId}-${a.slotStart}`, a);
-    return map;
-  }, [assignments]);
+  // 表示は30分刻みだが、割り当て自体は従来通り自由な長さ（主に1時間）のまま保持する。
+  // セルごとの参照は findCoveringAssignment() で「時刻を含むか」を都度判定する。
 
   // 時間帯ごとに、業務A/B/全・WHILL関連業務の「必要人数 vs 実際の配置人数」を比較して
   // 不足を判定する。
@@ -122,43 +140,76 @@ export default function SchedulePage() {
   //
   // 修正後: 各コードごとに src/lib/dutySchedule.ts の稼働時間定義でフィルタし、稼働時間内の
   // 時間帯のみを対象に、必要人数(requiredCountAtSlot)と実際の配置人数を比較する。
-  const shortageBySlot = useMemo(() => {
-    const countBySlotAndCode = new Map<string, Map<string, number>>();
-    for (const a of assignments) {
-      if (!countBySlotAndCode.has(a.slotStart)) countBySlotAndCode.set(a.slotStart, new Map());
-      const m = countBySlotAndCode.get(a.slotStart)!;
-      m.set(a.cartPosition.code, (m.get(a.cartPosition.code) ?? 0) + 1);
-    }
+  const shortageByHour = useMemo(() => {
+    // 割り当てはhourStartの時刻をカバーしているかどうかで「その時間の実配置」を数える
+    // （既存の1時間業務が正しく1カウントされる。分割されないため半端は発生しない）。
+    const result = new Map<number, string[]>();
+    for (let hourIdx = 0; hourIdx < 24; hourIdx++) {
+      const hourStartMinutes = hourIdx * 60;
+      const countByCode = new Map<string, number>();
+      for (const a of assignments) {
+        const start = minutesSinceOperatingStart(a.slotStart);
+        let end = minutesSinceOperatingStart(a.slotEnd);
+        if (end <= start) end += 24 * 60;
+        if (start <= hourStartMinutes && hourStartMinutes < end) {
+          countByCode.set(a.cartPosition.code, (countByCode.get(a.cartPosition.code) ?? 0) + 1);
+        }
+      }
 
-    const result = new Map<string, string[]>();
-    SLOTS.forEach((s, idx) => {
-      const counts = countBySlotAndCode.get(s.start) ?? new Map<string, number>();
       const missing: string[] = [];
-
       for (const duty of DUTY_PRIORITY) {
-        if (!isDutyActiveAtSlot(duty, idx)) continue; // 稼働時間外は不足計算しない
-        const required = requiredCountAtSlot(duty, idx, demandByCode);
-        const actual = counts.get(duty) ?? 0;
+        if (!isDutyActiveAtSlot(duty, hourIdx)) continue;
+        const required = requiredCountAtSlot(duty, hourIdx, demandByCode);
+        const actual = countByCode.get(duty) ?? 0;
         if (actual < required) missing.push(duty);
       }
       for (const event of WHILL_EVENTS) {
-        if (event.slotIndex !== idx) continue; // 該当時間帯のみ計算対象
-        const required = requiredCountAtSlot(event.code, idx, demandByCode);
-        const actual = counts.get(event.code) ?? 0;
+        if (event.slotIndex !== hourIdx) continue;
+        const required = requiredCountAtSlot(event.code, hourIdx, demandByCode);
+        const actual = countByCode.get(event.code) ?? 0;
         if (actual < required) missing.push(event.code);
       }
-
-      result.set(s.start, missing);
-    });
+      result.set(hourIdx, missing);
+    }
     return result;
   }, [assignments, demandByCode]);
 
-  async function handlePositionChange(employeeId: string, slotStart: string, slotEnd: string, cartPositionId: string) {
-    await fetch("/api/schedule", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ employeeId, workDate: date, slotStart, slotEnd, cartPositionId: cartPositionId || null }),
-    });
+  // slotIdx（0-47の30分スロット）を編集する。
+  // その30分をカバーしている割り当てが1時間（=自動配置のデフォルト）の場合は、
+  // 触れていない方の30分を元の業務のまま残しつつ、編集した方だけ新しい業務にする
+  // ＝1時間の自動業務を2つの30分業務に「分割」する。既に30分単位ならそのまま更新する。
+  async function handlePositionChange(employeeId: string, slotIdx: number, cartPositionId: string) {
+    const s = SLOTS[slotIdx];
+    const covering = findCoveringAssignment(assignments, employeeId, s.start);
+
+    if (covering && coveringDurationMinutes(covering) > 30) {
+      const hourIdx = Math.floor(slotIdx / 2);
+      const firstIdx = hourIdx * 2;
+      const secondIdx = firstIdx + 1;
+      const isFirstHalf = slotIdx === firstIdx;
+      const hourStart = SLOTS[firstIdx].start;
+      const hourMid = SLOTS[firstIdx].end; // == SLOTS[secondIdx].start
+      const hourEnd = SLOTS[secondIdx].end;
+      const firstHalfCode = isFirstHalf ? cartPositionId : covering.cartPositionId;
+      const secondHalfCode = isFirstHalf ? covering.cartPositionId : cartPositionId;
+
+      await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId, workDate: date, slotStart: hourStart, slotEnd: hourMid, cartPositionId: firstHalfCode || null }),
+      });
+      await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId, workDate: date, slotStart: hourMid, slotEnd: hourEnd, cartPositionId: secondHalfCode || null }),
+      });
+    } else {
+      await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId, workDate: date, slotStart: s.start, slotEnd: s.end, cartPositionId: cartPositionId || null }),
+      });
+    }
     load();
   }
 
@@ -229,18 +280,21 @@ export default function SchedulePage() {
             <tr>
               <th style={{ ...thStyle, position: "sticky", left: 0, zIndex: 2,minWidth:"100px", backgroundColor: "white" }}>氏名</th>
               <th style={thStyle}>勤務時間</th>
-              {SLOTS.map((s) => (
-                <th key={s.start} style={{ ...thStyle, minWidth: 52 }}>{s.start}</th>
+              {Array.from({ length: 24 }, (_, hourIdx) => (
+                <th key={hourIdx} colSpan={2} style={{ ...thStyle, minWidth: 80, fontSize: 11 }}>
+                  {SLOTS[hourIdx * 2].start}
+                </th>
               ))}
             </tr>
             <tr>
               <th style={{ ...thStyle, position: "sticky", left: 0, zIndex: 2, fontWeight: 400 }}>配置状況</th>
               <th style={thStyle}></th>
-              {SLOTS.map((s) => {
-                const missing = shortageBySlot.get(s.start) ?? [];
+              {Array.from({ length: 24 }, (_, hourIdx) => {
+                const missing = shortageByHour.get(hourIdx) ?? [];
                 return (
                   <th
-                    key={s.start}
+                    key={hourIdx}
+                    colSpan={2}
                     style={{
                       ...thStyle,
                       background: missing.length > 0 ? "#fee2e2" : "var(--color-surface-2)",
@@ -267,11 +321,11 @@ export default function SchedulePage() {
                   {r.resolvedStart && r.resolvedEnd ? `${r.resolvedStart}〜${r.resolvedEnd}` : ""}
                 </td>
                 {SLOTS.map((s, idx) => {
-                  const isActive = idx >= r.activeStartIdx && idx < r.activeEndIdx;
+                  const isActive = toHourIdx(idx) >= r.activeStartIdx && toHourIdx(idx) < r.activeEndIdx;
                   if (!isActive) {
                     return <td key={s.start} style={{ ...tdStyle, background: "var(--color-surface-2)" }} />;
                   }
-                  const a = assignMap.get(`${r.employeeId}-${s.start}`);
+                  const a = findCoveringAssignment(assignments, r.employeeId, s.start);
                   const color = a ? (a.cartPosition.color ?? POSITION_COLORS[a.cartPosition.code] ?? "#f1f5f9") : "#ffffff";
 
                   if (!isAdmin) {
@@ -286,9 +340,9 @@ export default function SchedulePage() {
                     <td key={s.start} style={{ ...tdStyle, padding: 0 }}>
                       <select
                         value={a?.cartPositionId ?? ""}
-                        onChange={(e) => handlePositionChange(r.employeeId, s.start, s.end, e.target.value)}
+                        onChange={(e) => handlePositionChange(r.employeeId, idx, e.target.value)}
                         style={{
-                          width: 52, height: 30, background: color,
+                          width: 40, height: 30, background: color,
                           color: "var(--color-text)", border: "1px solid var(--color-border)",
                           fontSize: 11, textAlign: "center", cursor: "pointer",
                         }}
