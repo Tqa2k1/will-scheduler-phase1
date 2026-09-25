@@ -1,0 +1,299 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ShiftAdjustmentConfirmation {
+  id              String   @id @default(cuid())
+  month           String   @unique
+  shortagesByDate Json
+  confirmedAt     DateTime @default(now())
+  confirmedBy     String?
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         UserRole  @default(EMPLOYEE)
+  employeeId   String?   @unique
+  createdAt    DateTime  @default(now())
+  employee     Employee? @relation(fields: [employeeId], references: [id])
+}
+
+model Employee {
+  id                  String                    @id @default(cuid())
+  fullName            String
+  role                EmployeeRole              @default(STAFF)
+  commuteType         CommuteType?
+  isActive            Boolean                   @default(true)
+  note                String?
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+  baseEndTime         String?
+  baseStartTime       String?
+  contactEmail        String?
+  priorityOrder       Int                       @default(0)
+  breaks              Break[]
+  dailyAssignments    DailyAssignment[]
+  rotationPatterns    EmployeeRotationPattern[]
+  incidentFlags       IncidentFlag[]
+  monthRoster         MonthRoster[]
+  personalConstraints PersonalConstraint[]
+  shiftClaimRequests  ShiftClaimRequest[]
+  user                User?
+}
+
+model ShiftType {
+  id                 String              @id @default(cuid())
+  code               String              @unique
+  name               String
+  defaultStartTime   String
+  defaultEndTime     String
+  spansMidnight      Boolean             @default(false)
+  monthRoster        MonthRoster[]
+  shiftClaimRequests ShiftClaimRequest[]
+}
+
+model MonthRoster {
+  id                String       @id @default(cuid())
+  employeeId        String
+  workDate          DateTime     @db.Date
+  shiftTypeId       String?
+  status            RosterStatus @default(WORK)
+  createdBy         String?
+  updatedBy         String?
+  updatedAt         DateTime     @updatedAt
+  createdAt         DateTime     @default(now())
+  overrideEndTime   String?
+  overrideStartTime String?
+  employee          Employee     @relation(fields: [employeeId], references: [id])
+  shiftType         ShiftType?   @relation(fields: [shiftTypeId], references: [id])
+
+  @@unique([employeeId, workDate])
+  @@index([workDate])
+}
+
+model CartPosition {
+  id                 String               @id @default(cuid())
+  code               String               @unique
+  name               String
+  category           PositionCategory
+  description        String?
+  isActive           Boolean              @default(true)
+  operatingEndTime   String?
+  operatingStartTime String?
+  color              String?
+  operatingHours     CartOperatingHours[]
+  dailyAssignments   DailyAssignment[]
+  demandTemplates    DemandTemplate[]
+  requirements       TaskRequirement[]
+}
+
+model TaskRequirement {
+  id                String         @id @default(cuid())
+  cartPositionId    String
+  appliesToAllRoles Boolean        @default(true)
+  targetRoles       EmployeeRole[]
+  requiredCount     Int            @default(1)
+  note              String?
+  isActive          Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  cartPosition      CartPosition   @relation(fields: [cartPositionId], references: [id])
+
+  @@index([cartPositionId])
+}
+
+model RolePriority {
+  id            String       @id @default(cuid())
+  role          EmployeeRole @unique
+  priorityOrder Int
+  updatedAt     DateTime     @updatedAt
+}
+
+model CartOperatingHours {
+  id             String       @id @default(cuid())
+  cartPositionId String
+  dayTemplate    String
+  startTime      String
+  endTime        String
+  cartPosition   CartPosition @relation(fields: [cartPositionId], references: [id])
+}
+
+model DemandTemplate {
+  id             String       @id @default(cuid())
+  cartPositionId String
+  dayTemplate    String
+  timeSlot       String
+  requiredCount  Int          @default(0)
+  cartPosition   CartPosition @relation(fields: [cartPositionId], references: [id])
+
+  @@unique([cartPositionId, dayTemplate, timeSlot])
+}
+
+model DailyAssignment {
+  id             String       @id @default(cuid())
+  employeeId     String
+  workDate       DateTime     @db.Date
+  slotStart      String
+  slotEnd        String
+  cartPositionId String
+  source         String       @default("MANUAL")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  cartPosition   CartPosition @relation(fields: [cartPositionId], references: [id])
+  employee       Employee     @relation(fields: [employeeId], references: [id])
+
+  @@index([workDate, slotStart])
+  @@index([employeeId, workDate])
+}
+
+model Break {
+  id              String   @id @default(cuid())
+  employeeId      String
+  workDate        DateTime @db.Date
+  breakStart      String
+  breakEnd        String
+  requiredMinutes Int
+  actualMinutes   Int?
+  employee        Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId, workDate])
+}
+
+model RotationPattern {
+  id                String                    @id @default(cuid())
+  code              String                    @unique
+  name              String
+  patternDefinition Json
+  isActive          Boolean                   @default(true)
+  employees         EmployeeRotationPattern[]
+}
+
+model EmployeeRotationPattern {
+  id                String          @id @default(cuid())
+  employeeId        String
+  rotationPatternId String
+  anchorDate        DateTime        @db.Date
+  createdAt         DateTime        @default(now())
+  isCurrent         Boolean         @default(true)
+  employee          Employee        @relation(fields: [employeeId], references: [id])
+  rotationPattern   RotationPattern @relation(fields: [rotationPatternId], references: [id])
+
+  @@index([employeeId, isCurrent])
+}
+
+model PersonalConstraint {
+  id             String         @id @default(cuid())
+  employeeId     String
+  workDate       DateTime       @db.Date
+  rangeStart     String?
+  rangeEnd       String?
+  constraintType ConstraintType
+  note           String?
+  employee       Employee       @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId, workDate])
+}
+
+model IncidentFlag {
+  id         String       @id @default(cuid())
+  employeeId String
+  workDate   DateTime     @db.Date
+  flagType   IncidentType
+  note       String?
+  recordedBy String?
+  recordedAt DateTime     @default(now())
+  employee   Employee     @relation(fields: [employeeId], references: [id])
+}
+
+model ShiftClaimRequest {
+  id          String           @id @default(cuid())
+  employeeId  String
+  workDate    DateTime         @db.Date
+  status      ShiftClaimStatus @default(PENDING)
+  requestedAt DateTime         @default(now())
+  decidedAt   DateTime?
+  decidedBy   String?
+  shiftTypeId String?
+  requestedStartTime String?
+  requestedEndTime   String?
+  employee    Employee         @relation(fields: [employeeId], references: [id])
+  shiftType   ShiftType?       @relation(fields: [shiftTypeId], references: [id])
+
+  @@unique([employeeId, workDate])
+  @@index([workDate, status])
+}
+
+model RosterAuditLog {
+  id        String   @id @default(cuid())
+  tableName String
+  recordId  String
+  action    String
+  changedBy String?
+  changedAt DateTime @default(now())
+  oldValue  Json?
+  newValue  Json?
+
+  @@index([tableName, recordId])
+}
+
+enum UserRole {
+  ADMIN
+  INC
+  EMPLOYEE
+}
+
+enum EmployeeRole {
+  INC
+  RESPONSIBLE // 責任者（2026-09追加。OFFICE優先ルールの対象。詳細はAUTO_ASSIGN_RULES.md参照）
+  STAFF
+  OJT
+  CONTRACT
+  PARTTIME
+}
+
+enum CommuteType {
+  TAXI_ONE_WAY
+  OWN_CAR
+  OTHER
+}
+
+enum RosterStatus {
+  WORK
+  PAID_LEAVE
+  ADJUST_LEAVE
+  OFF
+}
+
+enum PositionCategory {
+  CART
+  SPECIAL
+}
+
+enum ConstraintType {
+  NG
+  OK
+}
+
+enum IncidentType {
+  LATE
+  DELAY
+  EARLY_LEAVE
+  OVERTIME
+  BF_FEE_CUT
+  OWN_CAR_COMMUTE
+  ONE_WAY_TAXI
+}
+
+enum ShiftClaimStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
