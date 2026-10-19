@@ -1,0 +1,231 @@
+/* =========================================================
+   WHILL 勤務管理システム — デザインシステム（トークン・ベース）
+   - 配色・書体・操作感は UI UX Pro Max の「Minimalism & Swiss Style」（業務アプリ/ダッシュボード向け）に準拠
+   - 色・余白・角丸・文字サイズはすべてここで定義したトークンを使う
+   - コンポーネント用のスタイルは components/ui/ui.css にまとめる
+   - 旧クラス（.card / .btn / .btn-secondary / .btn-danger / .input / .label / .modal*）は
+     既存ページを壊さないよう同じ名前のまま新しい見た目に置き換えている
+   ========================================================= */
+:root {
+  /* --- Primary（操作・選択状態のみに使う） --- */
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-soft: #eff6ff;
+  --color-primary-soft-border: #bfdbfe;
+  --color-on-primary: #ffffff; /* Primary 背景上の文字色 */
+
+  /* --- 背景・面・枠線 --- */
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f1f5f9; /* 表の見出し・無効状態 */
+  --color-surface-hover: #f8fafc; /* 行・項目のホバー */
+  --color-border: #e4ecfc;
+  --color-border-strong: #cbd5e1; /* 入力欄のホバー・区切りの強調 */
+
+  /* --- 文字 --- */
+  --color-text: #0f172a;
+  --color-text-muted: #475569;
+
+  /* --- セマンティックカラー（淡い背景 + 濃い文字） --- */
+  --color-success-bg: #ecfdf5;
+  --color-success-text: #047857;
+  --color-success-border: #a7f3d0;
+  --color-warning-bg: #fef6e0;
+  --color-warning-text: #92400e;
+  --color-warning-border: #f2dfa0;
+  --color-error-bg: #fdecec;
+  --color-error-text: #b91c1c;
+  --color-error-border: #f5c2c2;
+  --color-info-bg: #eff6ff;
+  --color-info-text: #1d4ed8;
+  --color-info-border: #bfdbfe;
+
+  /* --- 文字サイズ（5段階のみ。強調はサイズではなく太さと色で行う） --- */
+  --text-xs: 12px;   /* 補足・バッジ */
+  --text-sm: 13px;   /* ラベル・表・説明文 */
+  --text-base: 14px; /* 本文・ボタン・入力 */
+  --text-md: 16px;   /* セクション見出し */
+  --text-lg: 20px;   /* ページタイトル・大きな数値 */
+  --leading: 1.65;
+
+  /* --- 余白 --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* --- 角丸・影・動き --- */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --shadow: 0 1px 3px rgba(15, 23, 42, 0.08); /* 影はこの1段階のみ */
+  --overlay: rgba(15, 23, 42, 0.32);
+  --transition: 150ms ease;
+
+  /* --- 重なり順 --- */
+  --z-popover: 40;
+  --z-modal: 50;
+  --z-toast: 60;
+
+  /* --- フォント（next/font で読み込んだ Noto Sans JP を最優先） --- */
+  --font-body: var(--font-inter), "Inter", var(--font-noto-sans-jp), "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --font-display: var(--font-body);
+
+  /* --- 旧トークン名（既存ページ互換。新規コードでは使わない） --- */
+  --color-surface-2: var(--color-surface-muted);
+  --color-accent: var(--color-primary);
+  --color-accent-soft: var(--color-primary-soft);
+  --color-ok: var(--color-success-text);
+  --color-warn: var(--color-warning-text);
+  --color-danger: var(--color-error-text);
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, p { line-height: 1.5; }
+
+a { color: var(--color-primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button, input, select, textarea { font-family: inherit; font-size: inherit; }
+
+/* 操作できる要素は常にポインターを表示 */
+button:not(:disabled), [role="button"], select, summary, label[for] { cursor: pointer; }
+
+/* 表内の数字（時間・人数）は桁がそろう等幅数字にする */
+table { font-variant-numeric: tabular-nums; }
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+
+/* =========================================================
+   旧クラス（既存ページ用）— 新しい見た目に置き換え
+   ========================================================= */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+}
+
+.btn,
+.btn-secondary,
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 7px 16px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--transition), border-color var(--transition), color var(--transition);
+}
+.btn:hover, .btn-secondary:hover, .btn-danger:hover { text-decoration: none; }
+.btn:disabled, .btn-secondary:disabled, .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border: 1px solid var(--color-primary);
+}
+.btn:hover:not(:disabled) { background: var(--color-primary-hover); border-color: var(--color-primary-hover); }
+.btn:active:not(:disabled) { background: var(--color-primary-hover); }
+
+.btn-secondary {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+}
+.btn-secondary:hover:not(:disabled) { background: var(--color-surface-hover); border-color: var(--color-text-muted); }
+.btn-secondary:active:not(:disabled) { background: var(--color-surface-muted); }
+
+.btn-danger {
+  background: var(--color-surface);
+  color: var(--color-error-text);
+  border: 1px solid var(--color-error-border);
+}
+.btn-danger:hover:not(:disabled) { background: var(--color-error-bg); border-color: var(--color-error-text); }
+.btn-danger:active:not(:disabled) { background: var(--color-error-bg); }
+
+.input {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: var(--text-base);
+  line-height: 1.4;
+  transition: border-color var(--transition), background-color var(--transition);
+}
+.input::placeholder { color: var(--color-text-muted); opacity: 0.8; }
+.input:hover:not(:disabled) { border-color: var(--color-text-muted); }
+.input:focus { outline: 2px solid var(--color-primary); outline-offset: 0; border-color: var(--color-primary); }
+.input:disabled { background: var(--color-surface-muted); color: var(--color-text-muted); cursor: not-allowed; }
+.input[aria-invalid="true"] { border-color: var(--color-error-text); background: var(--color-error-bg); }
+.input[aria-invalid="true"]:focus { outline-color: var(--color-error-text); }
+
+.label {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+table { border-collapse: collapse; }
+th, td { border-bottom: 1px solid var(--color-border); }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: var(--overlay);
+  animation: ui-fade-in 150ms ease;
+}
+.modal {
+  width: 480px;
+  max-width: 100%;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  animation: ui-pop-in 150ms ease;
+}
+
+@keyframes ui-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ui-pop-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
